@@ -21,6 +21,8 @@ export interface GameInfo {
   trailerUrl: string;
   /** Hex colour lifted from the game's key art; recolours the whole shell. */
   accent: string;
+  /** The two bloom colours of the aurora behind everything. */
+  aurora: [string, string];
 }
 
 export type InstallKind = "steam" | "standalone" | "unknown";

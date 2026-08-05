@@ -157,7 +157,7 @@ export default function Stage({ game }: { game: GameInfo }) {
       />
 
       {install && (
-        <div className="tabbar">
+        <div className="segs">
           {panes.map((entry) => {
             const Glyph = entry.glyph;
             return (
@@ -165,20 +165,20 @@ export default function Stage({ game }: { game: GameInfo }) {
                 key={entry.id}
                 type="button"
                 role="tab"
-                className="tb"
+                className="seg"
                 aria-selected={pane === entry.id}
                 onClick={() => setPane(entry.id)}
               >
                 <Glyph size={14} />
                 {entry.label}
-                {entry.n !== undefined && <span className="tb__n">{entry.n}</span>}
+                {entry.n !== undefined && <span className="seg__n">{entry.n}</span>}
               </button>
             );
           })}
         </div>
       )}
 
-      <div className="pane">
+      <div className="">
         {loading ? (
           <div className="g2">
             <Card><Skeleton variant="line" count={4} /></Card>
@@ -315,7 +315,7 @@ function Presentation({
 
   return (
     <section className="pres">
-      <div className="pres__media">
+      <div className="pres__m">
         <img
           className="pres__still"
           src={game.heroUrl}
@@ -339,8 +339,7 @@ function Presentation({
           onError={() => setPlaying(false)}
         />
       </div>
-      <div className="pres__fade" />
-      <div className="pres__tint" />
+      <div className="pres__veil" />
 
       {playing && (
         <button
@@ -354,7 +353,7 @@ function Presentation({
         </button>
       )}
 
-      <div className="pres__body">
+      <div className="pres__in">
         <div className="grow">
           {logoOk ? (
             <img
@@ -392,7 +391,7 @@ function Presentation({
             {eac?.state === "bypassed" && <Chip tone="bad">Anti-cheat off</Chip>}
           </div>
 
-          <div className="row wrap pres__act" style={{ gap: "var(--s3)", marginTop: "var(--s5)" }}>
+          <div className="row wrap pres__cta" style={{ gap: "var(--s3)", marginTop: "var(--s5)" }}>
             {!install ? (
               <>
                 <button type="button" className="play" onClick={onDetect} disabled={busy}>

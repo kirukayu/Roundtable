@@ -190,22 +190,34 @@ impl Game {
         )
     }
 
-    /// The colour the whole interface takes on while this title is selected.
-    ///
-    /// Each is lifted from the game's own key art, which is what makes switching
-    /// titles feel like moving somewhere rather than filtering a list.
+    /// The colour of buttons and current state while this title is selected.
     pub fn accent(self) -> &'static str {
         match self {
-            // Erdtree gold.
-            Game::EldenRing => "#c8a44e",
-            // Night sky violet.
-            Game::Nightreign => "#7d7ad6",
-            // Ember.
-            Game::DarkSouls3 => "#c2542e",
-            // Lacquered crimson.
-            Game::Sekiro => "#b8433a",
-            // Rubicon hazard amber.
-            Game::ArmoredCore6 => "#d08a2a",
+            Game::EldenRing => "#d8b25c",
+            Game::Nightreign => "#8f7ee6",
+            Game::DarkSouls3 => "#d4703c",
+            Game::Sekiro => "#d4553f",
+            Game::ArmoredCore6 => "#3fb5c9",
+        }
+    }
+
+    /// The two colours of the aurora behind everything.
+    ///
+    /// Held apart on the wheel so the blooms read as a gradient rather than one
+    /// flat wash: gold over deep bronze for Elden Ring, ember over blood for
+    /// Sekiro, and so on. This is what makes each title feel like its own place.
+    pub fn aurora(self) -> (&'static str, &'static str) {
+        match self {
+            // Erdtree gold falling into bronze shadow.
+            Game::EldenRing => ("#8a6a1e", "#3d2f14"),
+            // Night sky: violet against deep indigo.
+            Game::Nightreign => ("#4a3d8f", "#1e2352"),
+            // Ember and ash.
+            Game::DarkSouls3 => ("#8a3c1c", "#3a1f14"),
+            // Lacquer red over cold slate.
+            Game::Sekiro => ("#8c2f22", "#2a3038"),
+            // Rubicon: coolant blue against hazard rust.
+            Game::ArmoredCore6 => ("#1c6272", "#5a3418"),
         }
     }
 
@@ -250,6 +262,8 @@ pub struct GameInfo {
     pub logo_url: String,
     pub trailer_url: String,
     pub accent: &'static str,
+    /// First and second aurora bloom colours.
+    pub aurora: [&'static str; 2],
 }
 
 impl From<Game> for GameInfo {
@@ -269,6 +283,7 @@ impl From<Game> for GameInfo {
             logo_url: id.logo_url(),
             trailer_url: id.trailer_url(),
             accent: id.accent(),
+            aurora: [id.aurora().0, id.aurora().1],
         }
     }
 }

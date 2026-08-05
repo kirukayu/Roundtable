@@ -13,16 +13,16 @@
     "windows": [
       {
         "title": "Roundtable",
-        "width": 1280,
-        "height": 820,
-        "minWidth": 1040,
-        "minHeight": 680,
+        "width": 1320,
+        "height": 860,
+        "minWidth": 1080,
+        "minHeight": 700,
         "resizable": true,
         "decorations": false,
-        "transparent": false,
+        "transparent": true,
+        "shadow": true,
         "center": true,
-        "theme": "Dark",
-        "backgroundColor": "#0B0A08"
+        "theme": "Dark"
       }
     ],
     "security": {
