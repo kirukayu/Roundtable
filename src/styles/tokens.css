@@ -1,65 +1,55 @@
 /*
- * Roundtable — product tokens.
+ * Roundtable — tokens.
  *
- * The shell is deliberately quiet: near-black neutrals, one warm accent, and no
- * decoration of its own. Colour and personality come from the games — their cover
- * art, hero images and logos. That is what lets one launcher hold Elden Ring and
- * Sekiro and Armored Core without feeling like a companion app for any of them.
+ * The shell is black and stays black. The only colour in the entire interface is
+ * `--accent`, and that is set at runtime from whichever game is selected, so
+ * moving between titles actually feels like moving somewhere.
  */
 
 :root {
-  /* Surfaces, from deepest to nearest. Each step is a real elevation, not a tint. */
-  --bg: #0e1014;
-  --bg-deep: #0a0c0f;
-  --panel: #161a20;
-  --panel-hi: #1a1f26;
-  --card: #20252d;
-  --card-hi: #262c35;
-  --overlay: rgba(8, 10, 13, 0.72);
+  /* Black, then barely-lifted greys for the few surfaces that need separating. */
+  --black: #000000;
+  --s-0: #000000;
+  --s-1: #070708;
+  --s-2: #0d0d0f;
+  --s-3: #141416;
+  --s-4: #1c1c1f;
+  --s-5: #26262a;
 
-  /* Hairlines. Used sparingly — elevation and spacing do most of the separating. */
-  --line: rgba(255, 255, 255, 0.06);
-  --line-strong: rgba(255, 255, 255, 0.11);
-  --line-accent: rgba(201, 164, 90, 0.35);
+  --line: rgba(255, 255, 255, 0.05);
+  --line-2: rgba(255, 255, 255, 0.09);
 
-  /* Type. */
-  --text: #f2f2f2;
-  --text-dim: #a4a8af;
-  --text-faint: #6d737c;
-  --text-ghost: #4a4f57;
+  --text: #f4f4f5;
+  --text-2: #9c9ca4;
+  --text-3: #66666e;
+  --text-4: #3d3d44;
 
-  /* One accent, warm, used for the primary action and current state only. */
-  --accent: #c9a45a;
-  --accent-hi: #dcbb74;
-  --accent-lo: #9c7c3c;
-  --accent-wash: rgba(201, 164, 90, 0.12);
-  --accent-glow: rgba(201, 164, 90, 0.28);
+  /* Set per game from JS. These are the Elden Ring defaults. */
+  --accent: #c8a44e;
+  --accent-soft: rgba(200, 164, 78, 0.16);
+  --accent-line: rgba(200, 164, 78, 0.4);
+  --accent-glow: rgba(200, 164, 78, 0.45);
+  --accent-ink: #0a0803;
 
-  --success: #59c27a;
-  --warning: #e3b341;
-  --error: #e06c75;
-  --info: #6ba7e0;
-
-  --success-wash: rgba(89, 194, 122, 0.13);
-  --warning-wash: rgba(227, 179, 65, 0.13);
-  --error-wash: rgba(224, 108, 117, 0.13);
-  --info-wash: rgba(107, 167, 224, 0.13);
+  --ok: #5fbf7f;
+  --warn: #d9a441;
+  --bad: #d95f5f;
+  --ok-soft: rgba(95, 191, 127, 0.14);
+  --warn-soft: rgba(217, 164, 65, 0.14);
+  --bad-soft: rgba(217, 95, 95, 0.14);
 
   --font: "Manrope", -apple-system, "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", "Cascadia Mono", ui-monospace, monospace;
+  --mono: "JetBrains Mono", "Cascadia Mono", ui-monospace, monospace;
 
-  /* A restrained scale. Headings get size; body stays comfortable. */
-  --text-2xs: 10px;
-  --text-xs: 11px;
-  --text-sm: 13px;
-  --text-md: 14px;
-  --text-lg: 16px;
-  --text-xl: 20px;
-  --text-2xl: 26px;
-  --text-3xl: 34px;
-  --text-4xl: 46px;
+  --t-2xs: 10px;
+  --t-xs: 11px;
+  --t-sm: 13px;
+  --t-md: 14px;
+  --t-lg: 16px;
+  --t-xl: 20px;
+  --t-2xl: 28px;
+  --t-3xl: 40px;
 
-  /* Everything lands on an 8px grid; 4px exists only for tight icon gaps. */
   --s1: 4px;
   --s2: 8px;
   --s3: 12px;
@@ -68,78 +58,30 @@
   --s6: 32px;
   --s7: 48px;
   --s8: 64px;
-  --s9: 96px;
 
   --r-sm: 6px;
   --r: 10px;
-  --r-lg: 14px;
-  --r-xl: 20px;
+  --r-lg: 16px;
   --r-full: 999px;
 
-  /* Soft, wide shadows. Nothing hard-edged. */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 12px 40px -12px rgba(0, 0, 0, 0.7);
-  --shadow-xl: 0 24px 70px -20px rgba(0, 0, 0, 0.85);
-  --shadow-accent: 0 6px 24px -8px rgba(201, 164, 90, 0.5);
+  --sh-1: 0 2px 8px rgba(0, 0, 0, 0.6);
+  --sh-2: 0 8px 28px -8px rgba(0, 0, 0, 0.8);
+  --sh-3: 0 24px 64px -16px rgba(0, 0, 0, 0.95);
 
-  --sidebar-w: 264px;
-  --titlebar-h: 40px;
+  --rail: 250px;
+  --bar: 38px;
 
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
-  --fast: 120ms;
-  --base: 200ms;
-  --slow: 380ms;
-
-  --z-sticky: 10;
-  --z-overlay: 100;
-  --z-modal: 200;
-  --z-toast: 300;
+  --out: cubic-bezier(0.16, 1, 0.3, 1);
+  --spring: cubic-bezier(0.34, 1.4, 0.5, 1);
+  --fast: 130ms;
+  --mid: 240ms;
+  --slow: 480ms;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :root {
-    --fast: 1ms;
-    --base: 1ms;
-    --slow: 1ms;
-  }
+  :root { --fast: 1ms; --mid: 1ms; --slow: 1ms; }
 }
-
 :root[data-reduce-motion="true"] {
-  --fast: 1ms;
-  --base: 1ms;
-  --slow: 1ms;
-}
-
-/* Accent variants. The shell stays neutral either way; only the action colour moves. */
-:root[data-accent="ember"] {
-  --accent: #d97757;
-  --accent-hi: #e89478;
-  --accent-lo: #a85539;
-  --accent-wash: rgba(217, 119, 87, 0.12);
-  --accent-glow: rgba(217, 119, 87, 0.28);
-  --line-accent: rgba(217, 119, 87, 0.35);
-  --shadow-accent: 0 6px 24px -8px rgba(217, 119, 87, 0.5);
-}
-
-:root[data-accent="steel"] {
-  --accent: #7d93b2;
-  --accent-hi: #9db0ca;
-  --accent-lo: #5c6e88;
-  --accent-wash: rgba(125, 147, 178, 0.12);
-  --accent-glow: rgba(125, 147, 178, 0.28);
-  --line-accent: rgba(125, 147, 178, 0.35);
-  --shadow-accent: 0 6px 24px -8px rgba(125, 147, 178, 0.5);
-}
-
-:root[data-accent="moss"] {
-  --accent: #7fa878;
-  --accent-hi: #9cc294;
-  --accent-lo: #5d7f58;
-  --accent-wash: rgba(127, 168, 120, 0.12);
-  --accent-glow: rgba(127, 168, 120, 0.28);
-  --line-accent: rgba(127, 168, 120, 0.35);
-  --shadow-accent: 0 6px 24px -8px rgba(127, 168, 120, 0.5);
+  --fast: 1ms; --mid: 1ms; --slow: 1ms;
 }

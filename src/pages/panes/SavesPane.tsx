@@ -20,7 +20,7 @@ import type {
  * is who lives inside the selected one. Transfer and conversion are actions on a
  * character, not separate screens.
  */
-export default function SavesTab({ gameId }: { gameId: GameId }) {
+export default function SavesPane({ gameId }: { gameId: GameId }) {
   const toast = useToast();
   const [folders, setFolders] = useState<SaveFolder[] | null>(null);
   const [backups, setBackups] = useState<BackupRecord[]>([]);
@@ -76,7 +76,7 @@ export default function SavesTab({ gameId }: { gameId: GameId }) {
 
   if (folders === null) {
     return (
-      <div className="grid-2">
+      <div className="g2">
         <Card><Skeleton variant="line" count={4} /></Card>
         <Card><Skeleton variant="line" count={4} /></Card>
       </div>
@@ -97,20 +97,20 @@ export default function SavesTab({ gameId }: { gameId: GameId }) {
   const active = summary?.slots.filter((s) => s.active) ?? [];
 
   return (
-    <div className="col reveal">
-      <div className="row-between">
+    <div className="col rev">
+      <div className="between">
         <div className="row" style={{ gap: "var(--s2)" }}>
           <Chip>{entries.length} save files</Chip>
           <Chip>{backups.length} snapshots</Chip>
         </div>
         <div className="row" style={{ gap: "var(--s2)" }}>
-          <button type="button" className="btn btn--sm" onClick={() => setShowBackups(true)}>
+          <button type="button" className="btn btn--s" onClick={() => setShowBackups(true)}>
             <Icon.Clock size={14} />
             Snapshots
           </button>
           <button
             type="button"
-            className="btn btn--sm"
+            className="btn btn--s"
             disabled={entries.length < 2}
             onClick={() => setTransferOpen(true)}
           >
@@ -119,7 +119,7 @@ export default function SavesTab({ gameId }: { gameId: GameId }) {
           </button>
           <button
             type="button"
-            className="btn btn--primary btn--sm"
+            className="btn btn--a btn--s"
             disabled={!selected}
             onClick={async () => {
               if (!selected) return;
@@ -135,19 +135,19 @@ export default function SavesTab({ gameId }: { gameId: GameId }) {
         </div>
       </div>
 
-      <div className="grid-2">
+      <div className="g2">
         <Card title="Save files" flush>
           <div className="rows" style={{ padding: "var(--s3)" }}>
             {folders.map((folder) => (
               <div key={folder.path}>
                 <div className="row" style={{ padding: "var(--s2) var(--s2) var(--s1)" }}>
-                  <span className="rw__sub">
+                  <span className="rw__s">
                     {folder.accountName ?? folder.folderId ?? "Unknown account"}
                   </span>
                   {folder.likelyCracked ? (
-                    <Chip tone="warning">Non-Steam</Chip>
+                    <Chip tone="warn">Non-Steam</Chip>
                   ) : (
-                    <Chip tone="info">
+                    <Chip tone="a">
                       <Icon.Steam size={11} />
                       Steam
                     </Chip>
@@ -157,16 +157,16 @@ export default function SavesTab({ gameId }: { gameId: GameId }) {
                   <button
                     key={entry.path}
                     type="button"
-                    className={`rw rw--action${selected?.path === entry.path ? " rw--on" : ""}`}
+                    className={`rw rw--a${selected?.path === entry.path ? " rw--on" : ""}`}
                     onClick={() => setSelected(entry)}
                   >
                     <div className="grow" style={{ minWidth: 0 }}>
-                      <div className="rw__title mono truncate">{entry.fileName}</div>
-                      <div className="rw__sub">
+                      <div className="rw__t mono truncate">{entry.fileName}</div>
+                      <div className="rw__s">
                         {bytes(entry.sizeBytes)} · {when(entry.modified)}
                       </div>
                     </div>
-                    {entry.flavour === "seamless-coop" && <Chip tone="success">co-op</Chip>}
+                    {entry.flavour === "seamless-coop" && <Chip tone="ok">co-op</Chip>}
                     {entry.flavour === "game-backup" && <Chip>backup</Chip>}
                   </button>
                 ))}
@@ -181,7 +181,7 @@ export default function SavesTab({ gameId }: { gameId: GameId }) {
             selected && (
               <button
                 type="button"
-                className="btn btn--ghost btn--sm"
+                className="btn btn--g btn--s"
                 onClick={() => setConvertOpen(true)}
               >
                 <Icon.Swap size={13} />
@@ -236,8 +236,8 @@ export default function SavesTab({ gameId }: { gameId: GameId }) {
                         {slot.index + 1}
                       </span>
                       <div className="grow">
-                        <div className="rw__title">{slot.name.trim() || "Unnamed"}</div>
-                        <div className="rw__sub">
+                        <div className="rw__t">{slot.name.trim() || "Unnamed"}</div>
+                        <div className="rw__s">
                           Level {slot.level} · {playtime(slot.secondsPlayed)}
                         </div>
                       </div>
@@ -282,26 +282,26 @@ export default function SavesTab({ gameId }: { gameId: GameId }) {
                 <div key={backup.id} className="rw">
                   <div className="grow" style={{ minWidth: 0 }}>
                     <div className="row" style={{ gap: "var(--s2)" }}>
-                      <span className="rw__title">{backup.label}</span>
-                      {backup.automatic ? <Chip>auto</Chip> : <Chip tone="accent">manual</Chip>}
+                      <span className="rw__t">{backup.label}</span>
+                      {backup.automatic ? <Chip>auto</Chip> : <Chip tone="a">manual</Chip>}
                     </div>
-                    <div className="rw__sub">
+                    <div className="rw__s">
                       {exact(backup.created)} · {bytes(backup.sizeBytes)}
                     </div>
                     {backup.characters.length > 0 && (
-                      <div className="rw__sub">{backup.characters.join(" · ")}</div>
+                      <div className="rw__s">{backup.characters.join(" · ")}</div>
                     )}
                   </div>
                   <button
                     type="button"
-                    className="btn btn--sm"
+                    className="btn btn--s"
                     onClick={() => setRestoring(backup)}
                   >
                     Restore
                   </button>
                   <button
                     type="button"
-                    className="btn btn--ghost btn--sm btn--icon btn--danger"
+                    className="btn btn--g btn--s btn--i btn--bad"
                     aria-label="Delete"
                     onClick={async () => {
                       await api.savesDeleteBackup(gameId, backup.id);
@@ -327,7 +327,7 @@ export default function SavesTab({ gameId }: { gameId: GameId }) {
                 <span className="mono">{restoring.fileName}</span> goes back to{" "}
                 <span className="mono">{restoring.origin}</span>.
               </p>
-              <p className="field__help">
+              <p className="fld__h">
                 Whatever is there now is snapshotted first, so this is reversible.
               </p>
             </>
@@ -383,12 +383,12 @@ function TransferModal({
       onClose={onClose}
       footer={
         <>
-          <button type="button" className="btn btn--ghost" onClick={onClose}>
+          <button type="button" className="btn btn--g" onClick={onClose}>
             Cancel
           </button>
           <button
             type="button"
-            className="btn btn--primary"
+            className="btn btn--a"
             disabled={!ok}
             onClick={async () => {
               const pairs = picked.map((slot, i) => [slot, free[i]] as [number, number]);
@@ -407,21 +407,21 @@ function TransferModal({
       }
     >
       <div className="col">
-        <div className="notice">
+        <div className="note">
           <Icon.Info size={15} />
-          <div className="notice__body">
+          <div className="note__b">
             The account id is written inside every save, which is why copying the file
             between installations does not work. This rewrites it and recomputes the
             checksums. The destination is snapshotted first.
           </div>
         </div>
 
-        <div className="grid-2">
-          <div className="col-sm">
-            <label className="field__label" htmlFor="tfrom">From</label>
+        <div className="g2">
+          <div className="col2">
+            <label className="fld__l" htmlFor="tfrom">From</label>
             <select
               id="tfrom"
-              className="select"
+              className="sel2"
               value={from}
               onChange={(e) => setFrom(e.target.value)}
             >
@@ -440,7 +440,7 @@ function TransferModal({
                     <button
                       key={slot.index}
                       type="button"
-                      className={`rw rw--action${on ? " rw--on" : ""}`}
+                      className={`rw rw--a${on ? " rw--on" : ""}`}
                       onClick={() =>
                         setPicked((current) =>
                           on
@@ -453,8 +453,8 @@ function TransferModal({
                         <Icon.Check size={14} />
                       </span>
                       <div className="grow">
-                        <div className="rw__title">{slot.name.trim() || "Unnamed"}</div>
-                        <div className="rw__sub">
+                        <div className="rw__t">{slot.name.trim() || "Unnamed"}</div>
+                        <div className="rw__s">
                           Level {slot.level} · {playtime(slot.secondsPlayed)}
                         </div>
                       </div>
@@ -464,11 +464,11 @@ function TransferModal({
             </div>
           </div>
 
-          <div className="col-sm">
-            <label className="field__label" htmlFor="tto">To</label>
+          <div className="col2">
+            <label className="fld__l" htmlFor="tto">To</label>
             <select
               id="tto"
-              className="select"
+              className="sel2"
               value={to}
               onChange={(e) => setTo(e.target.value)}
             >
@@ -478,20 +478,20 @@ function TransferModal({
                 </option>
               ))}
             </select>
-            <p className="field__help">
+            <p className="fld__h">
               {free.length} free slot{free.length === 1 ? "" : "s"}
             </p>
 
             {from === to && (
-              <div className="notice notice--blocker">
+              <div className="note note--bad">
                 <Icon.Warning size={15} />
-                <div className="notice__body">Pick two different files.</div>
+                <div className="note__b">Pick two different files.</div>
               </div>
             )}
             {from !== to && picked.length > free.length && (
-              <div className="notice notice--blocker">
+              <div className="note note--bad">
                 <Icon.Warning size={15} />
-                <div className="notice__body">
+                <div className="note__b">
                   {picked.length} chosen but only {free.length} free slots.
                 </div>
               </div>
@@ -539,12 +539,12 @@ function ConvertModal({
       onClose={onClose}
       footer={
         <>
-          <button type="button" className="btn btn--ghost" onClick={onClose}>
+          <button type="button" className="btn btn--g" onClick={onClose}>
             Cancel
           </button>
           <button
             type="button"
-            className="btn btn--primary"
+            className="btn btn--a"
             onClick={async () => {
               const done = await toast.run("Save converted", () =>
                 api.savesConvert(
@@ -567,39 +567,39 @@ function ConvertModal({
       }
     >
       <div className="col">
-        <p className="field__help">
+        <p className="fld__h">
           A copy is written beside the original with the new extension. Nothing is
           overwritten.
         </p>
 
-        <div className="field">
-          <label className="field__label" htmlFor="cext">Extension</label>
+        <div className="fld">
+          <label className="fld__l" htmlFor="cext">Extension</label>
           <div className="row" style={{ gap: "var(--s2)" }}>
             <input
               id="cext"
-              className="input mono"
+              className="in mono"
               style={{ maxWidth: 140 }}
               value={extension}
               onChange={(e) => setExtension(e.target.value)}
             />
-            <button type="button" className="btn btn--sm" onClick={() => setExtension("sl2")}>
+            <button type="button" className="btn btn--s" onClick={() => setExtension("sl2")}>
               sl2
             </button>
-            <button type="button" className="btn btn--sm" onClick={() => setExtension("co2")}>
+            <button type="button" className="btn btn--s" onClick={() => setExtension("co2")}>
               co2
             </button>
           </div>
-          <span className="field__help">
+          <span className="fld__h">
             <span className="mono">sl2</span> is the vanilla game;{" "}
             <span className="mono">co2</span> is Seamless Co-op.
           </span>
         </div>
 
-        <div className="field">
-          <label className="field__label" htmlFor="creb">Give it to another account</label>
+        <div className="fld">
+          <label className="fld__l" htmlFor="creb">Give it to another account</label>
           <select
             id="creb"
-            className="select"
+            className="sel2"
             value={rebind}
             onChange={(e) => setRebind(e.target.value)}
           >
@@ -610,7 +610,7 @@ function ConvertModal({
               </option>
             ))}
           </select>
-          <span className="field__help">
+          <span className="fld__h">
             Needed when the save came from a different copy of the game.
           </span>
         </div>

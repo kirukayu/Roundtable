@@ -18,6 +18,9 @@ export interface GameInfo {
   coverUrl: string;
   heroUrl: string;
   logoUrl: string;
+  trailerUrl: string;
+  /** Hex colour lifted from the game's key art; recolours the whole shell. */
+  accent: string;
 }
 
 export type InstallKind = "steam" | "standalone" | "unknown";

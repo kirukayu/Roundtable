@@ -10,7 +10,7 @@ import type { CacheLocation, EacStatus, GameId, Installation, SystemReport } fro
  * The tertiary tab: anti-cheat, shader caches, machine state, and removing the
  * installation. Deliberately last, because none of it is why you opened the app.
  */
-export default function SystemTab({
+export default function SystemPane({
   gameId,
   install,
   eac,
@@ -50,14 +50,14 @@ export default function SystemTab({
     .reduce((sum, c) => sum + c.sizeBytes, 0);
 
   return (
-    <div className="col reveal">
-      <div className="grid-2">
+    <div className="col rev">
+      <div className="g2">
         <Card
           title="Shader caches"
           action={
             <button
               type="button"
-              className="btn btn--primary btn--sm"
+              className="btn btn--a btn--s"
               disabled={chosen.size === 0 || clearing}
               onClick={async () => {
                 setClearing(true);
@@ -78,7 +78,7 @@ export default function SystemTab({
             </button>
           }
         >
-          <p className="field__help" style={{ marginBottom: "var(--s3)" }}>
+          <p className="fld__h" style={{ marginBottom: "var(--s3)" }}>
             Stale after every driver or game update, and the usual cause of stutter blamed
             on mods.
           </p>
@@ -94,7 +94,7 @@ export default function SystemTab({
                     <button
                       key={cache.path}
                       type="button"
-                      className={`rw rw--action${on ? " rw--on" : ""}`}
+                      className={`rw rw--a${on ? " rw--on" : ""}`}
                       onClick={() =>
                         setChosen((current) => {
                           const next = new Set(current);
@@ -108,10 +108,10 @@ export default function SystemTab({
                         <Icon.Check size={14} />
                       </span>
                       <div className="grow">
-                        <div className="rw__title">
+                        <div className="rw__t">
                           {cache.owner} · {cache.label}
                         </div>
-                        <div className="rw__sub">{cache.fileCount} files</div>
+                        <div className="rw__s">{cache.fileCount} files</div>
                       </div>
                       <span className="mono" style={{ color: "var(--accent)" }}>
                         {bytes(cache.sizeBytes)}
@@ -120,7 +120,7 @@ export default function SystemTab({
                   );
                 })}
               {caches.every((c) => !c.exists || c.sizeBytes === 0) && (
-                <p className="field__help">Everything is already empty.</p>
+                <p className="fld__h">Everything is already empty.</p>
               )}
             </div>
           )}
@@ -140,26 +140,26 @@ export default function SystemTab({
                   )}
                 </span>
                 <div className="grow">
-                  <div className="opt__label">
+                  <div className="opt__l">
                     {eac.state === "bypassed"
                       ? "Bypassed"
                       : eac.state === "active"
                         ? "Active"
                         : "Not present"}
                   </div>
-                  <div className="opt__help">{eac.detail}</div>
+                  <div className="opt__h">{eac.detail}</div>
                 </div>
               </div>
               {eac.state !== "not-present" && (
                 <button
                   type="button"
-                  className={`btn btn--block${eac.state === "bypassed" ? " btn--primary" : ""}`}
+                  className={`btn btn--w${eac.state === "bypassed" ? " btn--a" : ""}`}
                   onClick={() => setConfirmEac(true)}
                 >
                   {eac.state === "bypassed" ? "Restore anti-cheat" : "Bypass anti-cheat"}
                 </button>
               )}
-              <p className="field__help" style={{ marginTop: "var(--s3)" }}>
+              <p className="fld__h" style={{ marginTop: "var(--s3)" }}>
                 Mod loaders already skip anti-cheat for their own launches. This extends that
                 to Steam's Play button so a modded session cannot start one by accident.
               </p>
@@ -193,24 +193,24 @@ export default function SystemTab({
                 <div className="stat__k">steam</div>
               </div>
             </div>
-            <p className="field__help">
+            <p className="fld__h">
               {report.os} · {report.cpu}
             </p>
-            <hr className="divider" />
-            <div className="col-sm">
+            <hr className="hr" />
+            <div className="col2">
               {report.disks.map((disk) => {
                 const used = disk.totalBytes - disk.availableBytes;
                 const pct = disk.totalBytes > 0 ? (used / disk.totalBytes) * 100 : 0;
                 return (
                   <div key={disk.mount}>
-                    <div className="row-between" style={{ fontSize: "var(--text-xs)" }}>
+                    <div className="between" style={{ fontSize: "var(--text-xs)" }}>
                       <span className="mono">{disk.mount}</span>
                       <span className="faint">
                         {bytes(disk.availableBytes)} free of {bytes(disk.totalBytes)}
                       </span>
                     </div>
-                    <div className="bar" style={{ marginTop: 4 }}>
-                      <div className="bar__fill" style={{ width: `${pct}%` }} />
+                    <div className="bar2" style={{ marginTop: 4 }}>
+                      <div className="bar2__f" style={{ width: `${pct}%` }} />
                     </div>
                   </div>
                 );
@@ -221,15 +221,15 @@ export default function SystemTab({
       </Card>
 
       <Card title="Installation">
-        <div className="col-sm">
-          <div className="row-between">
+        <div className="col2">
+          <div className="between">
             <span className="mono faint truncate" style={{ maxWidth: "60%" }}>
               {install.root}
             </span>
             <div className="row" style={{ gap: "var(--s2)" }}>
               <button
                 type="button"
-                className="btn btn--sm"
+                className="btn btn--s"
                 onClick={() => void api.openPath(install.root)}
               >
                 <Icon.Folder size={13} />
@@ -237,7 +237,7 @@ export default function SystemTab({
               </button>
               <button
                 type="button"
-                className="btn btn--sm btn--danger"
+                className="btn btn--s btn--bad"
                 onClick={() => setConfirmForget(true)}
               >
                 Forget
@@ -271,7 +271,7 @@ export default function SystemTab({
                   The anti-cheat launcher is renamed and the real executable takes its place.
                   Every way of starting the game then skips it.
                 </p>
-                <p className="field__help">
+                <p className="fld__h">
                   Playing online with modified files risks a ban either way. This makes modded
                   offline play predictable; it is not a way to cheat online. The original is
                   kept and restorable from here.
@@ -300,7 +300,7 @@ export default function SystemTab({
               <p>
                 Roundtable stops tracking <span className="mono">{install.root}</span>.
               </p>
-              <p className="field__help">
+              <p className="fld__h">
                 Nothing is deleted. The game, its mods and its saves stay where they are.
               </p>
             </>

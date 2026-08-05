@@ -41,7 +41,7 @@ const PRESETS = [
   },
 ];
 
-export default function CoopTab({
+export default function CoopPane({
   gameId,
   install,
 }: {
@@ -93,7 +93,7 @@ export default function CoopTab({
 
   if (!settings) {
     return (
-      <div className="grid-2">
+      <div className="g2">
         <Card><Skeleton variant="line" count={5} /></Card>
         <Card><Skeleton variant="line" count={5} /></Card>
       </div>
@@ -106,16 +106,16 @@ export default function CoopTab({
   const stem = "ER0000";
 
   return (
-    <div className="col reveal">
-      <div className="row-between">
+    <div className="col rev">
+      <div className="between">
         <div className="row" style={{ gap: "var(--s2)" }}>
           {settings.installed ? (
-            <Chip tone="success">
+            <Chip tone="ok">
               <Icon.Check size={11} />
               {settings.dllVersion ?? "Installed"}
             </Chip>
           ) : (
-            <Chip tone="warning">Mod not installed</Chip>
+            <Chip tone="warn">Mod not installed</Chip>
           )}
           <Chip>
             {stem}.{extension}
@@ -123,7 +123,7 @@ export default function CoopTab({
         </div>
         <button
           type="button"
-          className="btn btn--primary btn--sm"
+          className="btn btn--a btn--s"
           onClick={save}
           disabled={!dirty || saving}
         >
@@ -133,11 +133,11 @@ export default function CoopTab({
       </div>
 
       {!settings.installed && (
-        <div className="notice notice--warning">
+        <div className="note note--warn">
           <Icon.Warning size={15} />
           <div>
-            <div className="notice__title">Seamless Co-op is not in this installation</div>
-            <div className="notice__body">
+            <div className="note__t">Seamless Co-op is not in this installation</div>
+            <div className="note__b">
               Extract it into <span className="mono">{install.gameDir}</span>. Settings you
               change here are still written and take effect once the mod is present.
             </div>
@@ -145,21 +145,21 @@ export default function CoopTab({
         </div>
       )}
 
-      <div className="grid-2">
+      <div className="g2">
         <Card title="Session">
-          <div className="field">
-            <label className="field__label" htmlFor="cpw">Password</label>
+          <div className="fld">
+            <label className="fld__l" htmlFor="cpw">Password</label>
             <div className="row" style={{ gap: "var(--s2)" }}>
               <input
                 id="cpw"
-                className="input mono"
+                className="in mono"
                 value={password}
                 placeholder="empty means solo"
                 onChange={(e) => set("PASSWORD.cooppassword", e.target.value)}
               />
               <button
                 type="button"
-                className="btn btn--icon"
+                className="btn btn--i"
                 aria-label="Generate"
                 onClick={async () => set("PASSWORD.cooppassword", await api.coopGeneratePassword())}
               >
@@ -167,23 +167,23 @@ export default function CoopTab({
               </button>
               {password && <CopyButton text={password} />}
             </div>
-            <span className="field__help">
+            <span className="fld__h">
               Everyone in the session needs the same password.
             </span>
           </div>
 
-          <hr className="divider" />
+          <hr className="hr" />
 
-          <div className="field">
-            <label className="field__label" htmlFor="cext">Save extension</label>
+          <div className="fld">
+            <label className="fld__l" htmlFor="cext">Save extension</label>
             <input
               id="cext"
-              className="input mono"
+              className="in mono"
               style={{ maxWidth: 160 }}
               value={extension}
               onChange={(e) => set("SAVE.save_file_extension", e.target.value)}
             />
-            <span className="field__help">
+            <span className="fld__h">
               Co-op writes <span className="mono">{stem}.{extension}</span> instead of the
               vanilla save. Changing it starts a fresh set of characters.
             </span>
@@ -198,7 +198,7 @@ export default function CoopTab({
                 <button
                   key={preset.name}
                   type="button"
-                  className="btn btn--ghost btn--sm"
+                  className="btn btn--g btn--s"
                   onClick={() => setDraft((current) => ({ ...current, ...preset.values }))}
                 >
                   {preset.name}
@@ -207,7 +207,7 @@ export default function CoopTab({
             </div>
           }
         >
-          <p className="field__help" style={{ marginBottom: "var(--s3)" }}>
+          <p className="fld__h" style={{ marginBottom: "var(--s3)" }}>
             Added per extra player.
           </p>
           {section("SCALING").map((spec) => (
@@ -260,9 +260,9 @@ function Field({
   if (spec.kind === "toggle") {
     return (
       <div className="opt">
-        <div className="opt__text">
-          <div className="opt__label">{spec.label}</div>
-          <div className="opt__help">{spec.help}</div>
+        <div className="opt__t">
+          <div className="opt__l">{spec.label}</div>
+          <div className="opt__h">{spec.help}</div>
         </div>
         <Switch
           checked={value === "1"}
@@ -276,12 +276,12 @@ function Field({
   if (spec.kind === "choice") {
     return (
       <div className="opt">
-        <div className="opt__text">
-          <div className="opt__label">{spec.label}</div>
-          <div className="opt__help">{spec.help}</div>
+        <div className="opt__t">
+          <div className="opt__l">{spec.label}</div>
+          <div className="opt__h">{spec.help}</div>
         </div>
         <select
-          className="select"
+          className="sel2"
           style={{ width: 180 }}
           value={value}
           aria-label={spec.label}
@@ -300,9 +300,9 @@ function Field({
   if (spec.kind === "range") {
     return (
       <div className="opt">
-        <div className="opt__text">
-          <div className="opt__label">{spec.label}</div>
-          <div className="opt__help">{spec.help}</div>
+        <div className="opt__t">
+          <div className="opt__l">{spec.label}</div>
+          <div className="opt__h">{spec.help}</div>
         </div>
         <div className="row" style={{ gap: "var(--s3)", width: 200 }}>
           <input
@@ -326,17 +326,17 @@ function Field({
   }
 
   return (
-    <div className="field" style={{ padding: "var(--s3) 0" }}>
-      <label className="field__label" htmlFor={`c-${spec.key}`}>
+    <div className="fld" style={{ padding: "var(--s3) 0" }}>
+      <label className="fld__l" htmlFor={`c-${spec.key}`}>
         {spec.label}
       </label>
       <input
         id={`c-${spec.key}`}
-        className="input"
+        className="in"
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />
-      <span className="field__help">{spec.help}</span>
+      <span className="fld__h">{spec.help}</span>
     </div>
   );
 }

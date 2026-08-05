@@ -20,14 +20,26 @@ use crate::{coop, eac, game, loader, mods, saves, steam, sys};
 pub struct AppState {
     pub app_data: PathBuf,
     pub settings: Mutex<Settings>,
+    pub presence: crate::presence::Presence,
+    pub http: reqwest::Client,
 }
 
 impl AppState {
     pub fn new(app_data: PathBuf) -> AppState {
         let settings = Settings::load(&app_data);
+        let presence = crate::presence::Presence::default();
+        if settings.discord_presence && presence.connect() {
+            presence.set_browsing();
+        }
         AppState {
             app_data,
             settings: Mutex::new(settings),
+            presence,
+            http: reqwest::Client::builder()
+                .user_agent(concat!("Roundtable/", env!("CARGO_PKG_VERSION")))
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .unwrap_or_default(),
         }
     }
 
@@ -69,8 +81,23 @@ pub fn settings_get(state: State<'_, AppState>) -> Settings {
 
 #[tauri::command]
 pub fn settings_set(state: State<'_, AppState>, settings: Settings) -> Result<Settings> {
+    let presence_wanted = settings.discord_presence;
+    let presence_was = state.settings.lock().discord_presence;
+
     *state.settings.lock() = settings;
     state.persist()?;
+
+    // Honour the toggle immediately rather than at the next launch.
+    if presence_wanted != presence_was {
+        if presence_wanted {
+            if state.presence.connect() {
+                state.presence.set_browsing();
+            }
+        } else {
+            state.presence.disconnect();
+        }
+    }
+
     Ok(state.settings.lock().clone())
 }
 
@@ -453,6 +480,10 @@ pub fn launch_run(
 
     let pid = crate::launch::spawn(&plan)?;
 
+    if state.settings.lock().discord_presence {
+        state.presence.set_playing(game, Some(&profile.name));
+    }
+
     profile.last_played = Some(chrono::Local::now().to_rfc3339());
     mods::save_profile(&state.app_data, &profile).ok();
     {
@@ -470,10 +501,68 @@ pub fn launch_run(
 }
 
 #[tauri::command]
-pub fn game_is_running(game: Game) -> bool {
+pub fn game_is_running(state: State<'_, AppState>, game: Game) -> bool {
     let mut system = sysinfo::System::new();
     system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
-    crate::launch::is_game_running(game, &system)
+    let running = crate::launch::is_game_running(game, &system);
+
+    // The UI polls this, which makes it the natural place to notice the game has
+    // exited and put the presence card back to browsing.
+    if state.settings.lock().discord_presence && !running {
+        state.presence.set_browsing();
+    }
+
+    running
+}
+
+// ---------------------------------------------------------------------------
+// Nexus Mods
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn nexus_validate(state: State<'_, AppState>) -> Result<crate::net::nexus::Account> {
+    let key = state
+        .settings
+        .lock()
+        .nexus_api_key
+        .clone()
+        .unwrap_or_default();
+    crate::net::nexus::validate(&state.http, &key).await
+}
+
+#[tauri::command]
+pub async fn nexus_mod_info(
+    state: State<'_, AppState>,
+    game: Game,
+    mod_id: u32,
+) -> Result<crate::net::nexus::ModInfo> {
+    let key = state
+        .settings
+        .lock()
+        .nexus_api_key
+        .clone()
+        .unwrap_or_default();
+    crate::net::nexus::mod_info(&state.http, &key, game, mod_id).await
+}
+
+#[tauri::command]
+pub async fn nexus_mod_files(
+    state: State<'_, AppState>,
+    game: Game,
+    mod_id: u32,
+) -> Result<Vec<crate::net::nexus::ModFile>> {
+    let key = state
+        .settings
+        .lock()
+        .nexus_api_key
+        .clone()
+        .unwrap_or_default();
+    crate::net::nexus::mod_files(&state.http, &key, game, mod_id).await
+}
+
+#[tauri::command]
+pub fn nexus_parse_link(link: String) -> Result<crate::net::nexus::NxmLink> {
+    crate::net::nexus::parse_nxm(&link)
 }
 
 // ---------------------------------------------------------------------------

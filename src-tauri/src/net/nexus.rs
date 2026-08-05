@@ -242,9 +242,14 @@ mod tests {
         for game in Game::ALL {
             let domain = domain_for(game);
             assert!(!domain.is_empty());
-            assert!(domain.chars().all(|c| c.is_ascii_lowercase()));
+            // Nexus slugs are lowercase alphanumeric: "darksouls3", "armoredcore6…".
+            assert!(
+                domain.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()),
+                "unexpected characters in {domain}"
+            );
         }
         assert_eq!(domain_for(Game::EldenRing), "eldenring");
+        assert_eq!(domain_for(Game::DarkSouls3), "darksouls3");
     }
 
     #[test]

@@ -9,6 +9,8 @@ pub mod install;
 pub mod launch;
 pub mod loader;
 pub mod mods;
+pub mod net;
+pub mod presence;
 pub mod saves;
 pub mod settings;
 pub mod steam;
@@ -76,6 +78,10 @@ pub fn run() {
             commands::saves_convert,
             commands::saves_rebind,
             commands::saves_duplicates,
+            commands::nexus_validate,
+            commands::nexus_mod_info,
+            commands::nexus_mod_files,
+            commands::nexus_parse_link,
             commands::sys_shader_caches,
             commands::sys_clear_caches,
             commands::sys_report,

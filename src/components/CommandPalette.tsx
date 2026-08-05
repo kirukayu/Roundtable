@@ -130,7 +130,7 @@ export function CommandPalette({
         <div className="pal__list" ref={listRef} role="listbox">
           {matches.length === 0 ? (
             <div className="blank">
-              <div className="blank__title">Nothing matches</div>
+              <div className="blank__t">Nothing matches</div>
             </div>
           ) : (
             matches.map((command, index) => {

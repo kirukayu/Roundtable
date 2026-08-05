@@ -253,6 +253,23 @@ export const Icon = {
       p,
     ),
   Bolt: (p: IconProps) => svg(<path d="M13.5 2 4 13.5h6.5L10 22l9.5-11.5H13Z" />, p),
+  Sound: (p: IconProps) =>
+    svg(
+      <>
+        <path d="M11 5 6.5 9H3v6h3.5L11 19Z" />
+        <path d="M15.5 9.2a4 4 0 0 1 0 5.6" />
+        <path d="M18.2 6.4a8 8 0 0 1 0 11.2" />
+      </>,
+      p,
+    ),
+  Muted: (p: IconProps) =>
+    svg(
+      <>
+        <path d="M11 5 6.5 9H3v6h3.5L11 19Z" />
+        <path d="m16 10 5 4M21 10l-5 4" />
+      </>,
+      p,
+    ),
   Box: (p: IconProps) =>
     svg(
       <>

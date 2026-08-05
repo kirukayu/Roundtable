@@ -165,6 +165,50 @@ impl Game {
             .find(|g| g.executable().to_ascii_lowercase() == lower)
     }
 
+    /// Steam movie id for this title's best cinematic trailer.
+    ///
+    /// The store API that lists these is often unreachable, so the ids are pinned.
+    /// The CDN path they resolve to is a plain mp4, which a webview can play with
+    /// no extra machinery.
+    fn trailer_id(self) -> u64 {
+        match self {
+            // "Rise, Tarnished" launch trailer.
+            Game::EldenRing => 256_875_477,
+            // Reveal gameplay trailer.
+            Game::Nightreign => 257_084_452,
+            // "Kingdom Fall".
+            Game::DarkSouls3 => 256_663_135,
+            Game::Sekiro => 256_745_081,
+            Game::ArmoredCore6 => 256_966_031,
+        }
+    }
+
+    pub fn trailer_url(self) -> String {
+        format!(
+            "https://cdn.cloudflare.steamstatic.com/steam/apps/{}/movie480.mp4",
+            self.trailer_id()
+        )
+    }
+
+    /// The colour the whole interface takes on while this title is selected.
+    ///
+    /// Each is lifted from the game's own key art, which is what makes switching
+    /// titles feel like moving somewhere rather than filtering a list.
+    pub fn accent(self) -> &'static str {
+        match self {
+            // Erdtree gold.
+            Game::EldenRing => "#c8a44e",
+            // Night sky violet.
+            Game::Nightreign => "#7d7ad6",
+            // Ember.
+            Game::DarkSouls3 => "#c2542e",
+            // Lacquered crimson.
+            Game::Sekiro => "#b8433a",
+            // Rubicon hazard amber.
+            Game::ArmoredCore6 => "#d08a2a",
+        }
+    }
+
     /// Official Steam library art, used for cards and the dashboard hero.
     pub fn cover_url(self) -> String {
         format!(
@@ -204,6 +248,8 @@ pub struct GameInfo {
     pub cover_url: String,
     pub hero_url: String,
     pub logo_url: String,
+    pub trailer_url: String,
+    pub accent: &'static str,
 }
 
 impl From<Game> for GameInfo {
@@ -221,6 +267,36 @@ impl From<Game> for GameInfo {
             cover_url: id.cover_url(),
             hero_url: id.hero_url(),
             logo_url: id.logo_url(),
+            trailer_url: id.trailer_url(),
+            accent: id.accent(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_title_has_distinct_art_and_an_accent() {
+        let mut accents = Vec::new();
+        for game in Game::ALL {
+            let info = GameInfo::from(game);
+            assert!(info.cover_url.contains(&game.steam_app_id().to_string()));
+            assert!(info.trailer_url.ends_with(".mp4"));
+            // A shared accent would defeat the point of recolouring per title.
+            assert!(!accents.contains(&info.accent), "duplicate accent");
+            accents.push(info.accent);
+        }
+    }
+
+    #[test]
+    fn accents_are_valid_hex() {
+        for game in Game::ALL {
+            let accent = game.accent();
+            assert_eq!(accent.len(), 7);
+            assert!(accent.starts_with('#'));
+            assert!(accent[1..].chars().all(|c| c.is_ascii_hexdigit()));
         }
     }
 }

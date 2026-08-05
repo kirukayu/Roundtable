@@ -28,7 +28,7 @@ export default function SettingsOverlay({
     <Modal title="Settings" onClose={onClose}>
       <div className="col">
         <section>
-          <div className="card__title" style={{ marginBottom: "var(--s2)" }}>
+          <div className="card__t" style={{ marginBottom: "var(--s2)" }}>
             Saves
           </div>
           <Option
@@ -38,9 +38,9 @@ export default function SettingsOverlay({
             onChange={(next) => void onPatch({ autoBackupOnLaunch: next })}
           />
           <div className="opt">
-            <div className="opt__text">
-              <div className="opt__label">Automatic snapshots kept</div>
-              <div className="opt__help">Manual ones are never pruned.</div>
+            <div className="opt__t">
+              <div className="opt__l">Automatic snapshots kept</div>
+              <div className="opt__h">Manual ones are never pruned.</div>
             </div>
             <div className="row" style={{ gap: "var(--s3)", width: 180 }}>
               <input
@@ -65,16 +65,16 @@ export default function SettingsOverlay({
           />
         </section>
 
-        <hr className="divider" />
+        <hr className="hr" />
 
         <section>
-          <div className="card__title" style={{ marginBottom: "var(--s2)" }}>
+          <div className="card__t" style={{ marginBottom: "var(--s2)" }}>
             Appearance
           </div>
           <div className="opt">
-            <div className="opt__text">
-              <div className="opt__label">Accent</div>
-              <div className="opt__help">Used for the Play button and current state.</div>
+            <div className="opt__t">
+              <div className="opt__l">Accent</div>
+              <div className="opt__h">Used for the Play button and current state.</div>
             </div>
             <div className="row" style={{ gap: "var(--s2)" }}>
               {ACCENTS.map((accent) => (
@@ -109,10 +109,10 @@ export default function SettingsOverlay({
           />
         </section>
 
-        <hr className="divider" />
+        <hr className="hr" />
 
         <section>
-          <div className="card__title" style={{ marginBottom: "var(--s2)" }}>
+          <div className="card__t" style={{ marginBottom: "var(--s2)" }}>
             Integrations
           </div>
           <Option
@@ -121,28 +121,28 @@ export default function SettingsOverlay({
             checked={settings.discordPresence}
             onChange={(next) => void onPatch({ discordPresence: next })}
           />
-          <div className="field" style={{ paddingTop: "var(--s3)" }}>
-            <label className="field__label" htmlFor="nexus">
+          <div className="fld" style={{ paddingTop: "var(--s3)" }}>
+            <label className="fld__l" htmlFor="nexus">
               Nexus Mods API key
             </label>
             <input
               id="nexus"
-              className="input mono"
+              className="in mono"
               type="password"
               placeholder="paste from your Nexus account page"
               value={settings.nexusApiKey ?? ""}
               onChange={(e) => void onPatch({ nexusApiKey: e.target.value || null })}
             />
-            <span className="field__help">
+            <span className="fld__h">
               Stored on this machine and sent only to api.nexusmods.com.
             </span>
           </div>
         </section>
 
-        <hr className="divider" />
+        <hr className="hr" />
 
         <section>
-          <div className="card__title" style={{ marginBottom: "var(--s2)" }}>
+          <div className="card__t" style={{ marginBottom: "var(--s2)" }}>
             Advanced
           </div>
           <Option
@@ -152,9 +152,9 @@ export default function SettingsOverlay({
             onChange={(next) => void onPatch({ useJunctionDeploy: next })}
           />
           <div className="opt">
-            <div className="opt__text">
-              <div className="opt__label">Download connections</div>
-              <div className="opt__help">Parallel ranges per download.</div>
+            <div className="opt__t">
+              <div className="opt__l">Download connections</div>
+              <div className="opt__h">Parallel ranges per download.</div>
             </div>
             <div className="row" style={{ gap: "var(--s3)", width: 180 }}>
               <input
@@ -179,14 +179,14 @@ export default function SettingsOverlay({
           />
         </section>
 
-        <hr className="divider" />
+        <hr className="hr" />
 
-        <div className="row-between">
+        <div className="between">
           <div>
-            <div className="opt__label">Roundtable 0.1.0</div>
-            <div className="opt__help">MIT licensed. No account, no telemetry.</div>
+            <div className="opt__l">Roundtable 0.1.0</div>
+            <div className="opt__h">MIT licensed. No account, no telemetry.</div>
           </div>
-          <Chip tone="accent">
+          <Chip tone="a">
             <Icon.Shield size={11} />
             Local only
           </Chip>
@@ -194,19 +194,19 @@ export default function SettingsOverlay({
 
         {settings.installations.length > 0 && (
           <>
-            <hr className="divider" />
+            <hr className="hr" />
             <div>
-              <div className="card__title" style={{ marginBottom: "var(--s2)" }}>
+              <div className="card__t" style={{ marginBottom: "var(--s2)" }}>
                 Known installations
               </div>
               <div className="rows">
                 {settings.installations.map((entry) => (
                   <div key={`${entry.game}-${entry.root}`} className="rw">
                     <div className="grow" style={{ minWidth: 0 }}>
-                      <div className="rw__title">{gameLabel(entry.game)}</div>
-                      <div className="rw__sub mono truncate">{entry.root}</div>
+                      <div className="rw__t">{gameLabel(entry.game)}</div>
+                      <div className="rw__s mono truncate">{entry.root}</div>
                     </div>
-                    {entry.isDefault && <Chip tone="accent">default</Chip>}
+                    {entry.isDefault && <Chip tone="a">default</Chip>}
                   </div>
                 ))}
               </div>

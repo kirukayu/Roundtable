@@ -32,8 +32,11 @@ export function Card({
   return (
     <section className={`card${flush ? " card--flush" : ""} ${className}`}>
       {title !== undefined && (
-        <header className="card__head" style={flush ? { padding: "var(--s4) var(--s5) 0" } : undefined}>
-          <span className="card__title">{title}</span>
+        <header
+          className="card__h"
+          style={flush ? { padding: "var(--s4) var(--s5) 0" } : undefined}
+        >
+          <span className="card__t">{title}</span>
           {action}
         </header>
       )}
@@ -85,9 +88,9 @@ export function Option({
 }) {
   return (
     <div className="opt">
-      <div className="opt__text">
-        <div className="opt__label">{label}</div>
-        {help && <div className="opt__help">{help}</div>}
+      <div className="opt__t">
+        <div className="opt__l">{label}</div>
+        {help && <div className="opt__h">{help}</div>}
       </div>
       <Switch checked={checked} onChange={onChange} label={label} disabled={disabled} />
     </div>
@@ -101,14 +104,14 @@ export function Option({
 export function Chip({
   tone,
   children,
-  solid,
+  dark,
 }: {
-  tone?: "accent" | "success" | "warning" | "error" | "info";
+  tone?: "a" | "ok" | "warn" | "bad";
   children: ReactNode;
-  solid?: boolean;
+  dark?: boolean;
 }) {
   return (
-    <span className={`chip${tone ? ` chip--${tone}` : ""}${solid ? " chip--solid" : ""}`}>
+    <span className={`chip${tone ? ` chip--${tone}` : ""}${dark ? " chip--dark" : ""}`}>
       {children}
     </span>
   );
@@ -128,16 +131,16 @@ export function NoticeBlock({ notice }: { notice: Notice }) {
   const Glyph = noticeIcon[notice.severity];
   const tone =
     notice.severity === "blocker"
-      ? " notice--blocker"
+      ? " note--bad"
       : notice.severity === "warning"
-        ? " notice--warning"
+        ? " note--warn"
         : "";
   return (
-    <div className={`notice${tone}`}>
+    <div className={`note${tone}`}>
       <Glyph size={15} />
       <div>
-        <div className="notice__title">{notice.title}</div>
-        <div className="notice__body">{notice.detail}</div>
+        <div className="note__t">{notice.title}</div>
+        <div className="note__b">{notice.detail}</div>
       </div>
     </div>
   );
@@ -160,11 +163,11 @@ export function Blank({
 }) {
   return (
     <div className="blank">
-      <span className="blank__art">
+      <span className="blank__i">
         <Glyph size={24} />
       </span>
-      <div className="blank__title">{title}</div>
-      {children && <p className="blank__body">{children}</p>}
+      <div className="blank__t">{title}</div>
+      {children && <p className="blank__b">{children}</p>}
       {action && <div style={{ marginTop: "var(--s3)" }}>{action}</div>}
     </div>
   );
@@ -206,26 +209,26 @@ export function Modal({
       }}
     >
       <div
-        className={`modal${wide ? " modal--wide" : ""}`}
+        className={`modal${wide ? " modal--w" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
         ref={surface}
       >
-        <header className="modal__head">
+        <header className="modal__h">
           <h2>{title}</h2>
           <button
             type="button"
-            className="btn btn--ghost btn--icon btn--sm"
+            className="btn btn--g btn--i btn--s"
             onClick={onClose}
             aria-label="Close"
           >
             <Icon.Close size={15} />
           </button>
         </header>
-        <div className="modal__body">{children}</div>
-        {footer && <footer className="modal__foot">{footer}</footer>}
+        <div className="modal__b">{children}</div>
+        {footer && <footer className="modal__f">{footer}</footer>}
       </div>
     </div>
   );
@@ -252,12 +255,12 @@ export function Confirm({
       onClose={onCancel}
       footer={
         <>
-          <button type="button" className="btn btn--ghost" onClick={onCancel}>
+          <button type="button" className="btn btn--g" onClick={onCancel}>
             Cancel
           </button>
           <button
             type="button"
-            className={`btn ${destructive ? "btn--danger" : "btn--primary"}`}
+            className={`btn ${destructive ? "btn--bad" : "btn--a"}`}
             onClick={onConfirm}
           >
             {confirmLabel}
@@ -341,7 +344,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       <div className="toasts" aria-live="polite">
         {toasts.map((toast) => (
           <div key={toast.id} className={`toast toast--${toast.tone}`}>
-            <span className="toast__icon">
+            <span className="toast__i">
               {toast.tone === "success" ? (
                 <Icon.Check size={15} />
               ) : toast.tone === "error" ? (
@@ -351,8 +354,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               )}
             </span>
             <div style={{ minWidth: 0 }}>
-              <div className="toast__title">{toast.title}</div>
-              {toast.detail && <div className="toast__body">{toast.detail}</div>}
+              <div className="toast__t">{toast.title}</div>
+              {toast.detail && <div className="toast__b">{toast.detail}</div>}
             </div>
           </div>
         ))}
@@ -406,7 +409,7 @@ export function CopyButton({ text }: { text: string }) {
   return (
     <button
       type="button"
-      className="btn btn--ghost btn--sm btn--icon"
+      className="btn btn--g btn--s btn--i"
       aria-label="Copy"
       onClick={async () => {
         try {

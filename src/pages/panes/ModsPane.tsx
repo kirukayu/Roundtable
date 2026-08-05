@@ -13,7 +13,7 @@ import type { ConflictReport, GameId, ModRecord, Profile } from "../../lib/types
  * The left column is the profile's order, drag-free but reorderable; the right is
  * everything installed. Adding is one button, and conflicts are a click away.
  */
-export default function ModsTab({
+export default function ModsPane({
   gameId,
   profile,
   profiles,
@@ -122,11 +122,11 @@ export default function ModsTab({
   };
 
   return (
-    <div className="col reveal">
-      <div className="row-between">
+    <div className="col rev">
+      <div className="between">
         <div className="row" style={{ gap: "var(--s2)" }}>
           {profiles.map((entry) => (
-            <Chip key={entry.id} tone={entry.id === draft?.id ? "accent" : undefined}>
+            <Chip key={entry.id} tone={entry.id === draft?.id ? "a" : undefined}>
               {entry.name}
             </Chip>
           ))}
@@ -136,7 +136,7 @@ export default function ModsTab({
             <>
               <button
                 type="button"
-                className="btn btn--sm"
+                className="btn btn--s"
                 onClick={() => setSettingsOpen(true)}
               >
                 <Icon.Settings size={14} />
@@ -144,7 +144,7 @@ export default function ModsTab({
               </button>
               <button
                 type="button"
-                className="btn btn--sm"
+                className="btn btn--s"
                 disabled={inOrder.filter((p) => p.entry.enabled).length < 2}
                 onClick={async () => {
                   const report = await toast.run("Conflicts checked", () =>
@@ -158,13 +158,13 @@ export default function ModsTab({
               </button>
             </>
           )}
-          <button type="button" className="btn btn--sm" onClick={addFolder} disabled={busy}>
+          <button type="button" className="btn btn--s" onClick={addFolder} disabled={busy}>
             <Icon.Folder size={14} />
             Folder
           </button>
           <button
             type="button"
-            className="btn btn--primary btn--sm"
+            className="btn btn--a btn--s"
             onClick={addArchive}
             disabled={busy}
           >
@@ -181,7 +181,7 @@ export default function ModsTab({
             title="No mods yet"
             action={
               <div className="row" style={{ gap: "var(--s2)" }}>
-                <button type="button" className="btn btn--primary" onClick={addArchive}>
+                <button type="button" className="btn btn--a" onClick={addArchive}>
                   <Icon.Plus size={15} />
                   Add an archive
                 </button>
@@ -197,7 +197,7 @@ export default function ModsTab({
           </Blank>
         </Card>
       ) : (
-        <div className="grid-2">
+        <div className="g2">
           <Card title={`Load order · ${inOrder.filter((p) => p.entry.enabled).length} active`}>
             {inOrder.length === 0 ? (
               <Blank icon={Icon.Layers} title="Nothing in this profile">
@@ -211,8 +211,8 @@ export default function ModsTab({
                       {index + 1}
                     </span>
                     <div className="grow" style={{ minWidth: 0 }}>
-                      <div className="rw__title truncate">{mod.name}</div>
-                      <div className="rw__sub">
+                      <div className="rw__t truncate">{mod.name}</div>
+                      <div className="rw__s">
                         {mod.kind === "assets"
                           ? "Assets"
                           : mod.kind === "native"
@@ -224,7 +224,7 @@ export default function ModsTab({
                     <div className="row" style={{ gap: 2 }}>
                       <button
                         type="button"
-                        className="btn btn--ghost btn--sm btn--icon"
+                        className="btn btn--g btn--s btn--i"
                         aria-label="Move up"
                         disabled={index === 0}
                         onClick={() => move(index, -1)}
@@ -233,7 +233,7 @@ export default function ModsTab({
                       </button>
                       <button
                         type="button"
-                        className="btn btn--ghost btn--sm btn--icon"
+                        className="btn btn--g btn--s btn--i"
                         aria-label="Move down"
                         disabled={index === inOrder.length - 1}
                         onClick={() => move(index, 1)}
@@ -250,7 +250,7 @@ export default function ModsTab({
                       />
                       <button
                         type="button"
-                        className="btn btn--ghost btn--sm btn--icon"
+                        className="btn btn--g btn--s btn--i"
                         aria-label="Remove from profile"
                         onClick={() => removeFromProfile(mod.id)}
                       >
@@ -261,7 +261,7 @@ export default function ModsTab({
                 ))}
               </div>
             )}
-            <p className="field__help" style={{ marginTop: "var(--s3)" }}>
+            <p className="fld__h" style={{ marginTop: "var(--s3)" }}>
               The mod at the top wins when two provide the same file.
             </p>
           </Card>
@@ -276,8 +276,8 @@ export default function ModsTab({
                 {unused.map((mod) => (
                   <div key={mod.id} className="rw">
                     <div className="grow" style={{ minWidth: 0 }}>
-                      <div className="rw__title truncate">{mod.name}</div>
-                      <div className="rw__sub">
+                      <div className="rw__t truncate">{mod.name}</div>
+                      <div className="rw__s">
                         {mod.fileCount} files · {bytes(mod.sizeBytes)}
                         {mod.bundledLoader ? ` · ships ${mod.bundledLoader}` : ""}
                       </div>
@@ -285,7 +285,7 @@ export default function ModsTab({
                     <div className="row" style={{ gap: 2 }}>
                       <button
                         type="button"
-                        className="btn btn--ghost btn--sm btn--icon"
+                        className="btn btn--g btn--s btn--i"
                         aria-label="Open folder"
                         onClick={() => void api.openPath(mod.path)}
                       >
@@ -293,7 +293,7 @@ export default function ModsTab({
                       </button>
                       <button
                         type="button"
-                        className="btn btn--ghost btn--sm btn--icon btn--danger"
+                        className="btn btn--g btn--s btn--i btn--bad"
                         aria-label="Delete"
                         onClick={() => setRemoving(mod)}
                       >
@@ -302,7 +302,7 @@ export default function ModsTab({
                       {draft && (
                         <button
                           type="button"
-                          className="btn btn--sm"
+                          className="btn btn--s"
                           onClick={() => addToProfile(mod)}
                         >
                           Add
@@ -328,7 +328,7 @@ export default function ModsTab({
                 <strong>{removing.name}</strong> and its {removing.fileCount} files leave the
                 library.
               </p>
-              <p className="field__help">Your game folder is untouched.</p>
+              <p className="fld__h">Your game folder is untouched.</p>
             </>
           }
           onCancel={() => setRemoving(null)}
@@ -370,9 +370,9 @@ export default function ModsTab({
                   <div key={clash.relativePath} className="rw">
                     <div className="grow" style={{ minWidth: 0 }}>
                       <div className="mono truncate">{clash.relativePath}</div>
-                      <div className="rw__sub">{clash.providers.join(" · ")}</div>
+                      <div className="rw__s">{clash.providers.join(" · ")}</div>
                     </div>
-                    <Chip tone={clash.mergeable ? "error" : "warning"}>
+                    <Chip tone={clash.mergeable ? "bad" : "warn"}>
                       {clash.winner} wins
                     </Chip>
                   </div>
@@ -386,11 +386,11 @@ export default function ModsTab({
       {settingsOpen && draft && (
         <Modal title={`${draft.name} options`} onClose={() => setSettingsOpen(false)}>
           <div className="col">
-            <div className="field">
-              <label className="field__label" htmlFor="pname">Name</label>
+            <div className="fld">
+              <label className="fld__l" htmlFor="pname">Name</label>
               <input
                 id="pname"
-                className="input"
+                className="in"
                 value={draft.name}
                 onChange={(event) => setDraft({ ...draft, name: event.target.value })}
                 onBlur={() => void save(draft)}
@@ -427,11 +427,11 @@ export default function ModsTab({
               onChange={(next) => void save({ ...draft, startOnline: next })}
             />
 
-            <div className="field">
-              <label className="field__label" htmlFor="psave">Separate save file</label>
+            <div className="fld">
+              <label className="fld__l" htmlFor="psave">Separate save file</label>
               <input
                 id="psave"
-                className="input mono"
+                className="in mono"
                 placeholder="leave blank to share the normal save"
                 value={draft.savefile ?? ""}
                 disabled={draft.seamlessCoop}
@@ -440,7 +440,7 @@ export default function ModsTab({
                 }
                 onBlur={() => void save(draft)}
               />
-              <span className="field__help">
+              <span className="fld__h">
                 {draft.seamlessCoop
                   ? "Co-op already isolates saves through its own extension."
                   : "A modded run writing into your vanilla save is how characters get lost."}
@@ -455,11 +455,11 @@ export default function ModsTab({
 
 function NoticeRegulation({ providers }: { providers: string[] }) {
   return (
-    <div className="notice notice--warning">
+    <div className="note note--warn">
       <Icon.Warning size={15} />
       <div>
-        <div className="notice__title">Two mods change the same balance data</div>
-        <div className="notice__body">
+        <div className="note__t">Two mods change the same balance data</div>
+        <div className="note__b">
           {providers.join(" and ")} both ship regulation.bin. Only the first takes effect, so
           the other's weapon, spell and enemy changes are discarded. Mods this large usually
           need a purpose-built merged build.
