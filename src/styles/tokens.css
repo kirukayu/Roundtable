@@ -1,0 +1,145 @@
+/*
+ * Roundtable — product tokens.
+ *
+ * The shell is deliberately quiet: near-black neutrals, one warm accent, and no
+ * decoration of its own. Colour and personality come from the games — their cover
+ * art, hero images and logos. That is what lets one launcher hold Elden Ring and
+ * Sekiro and Armored Core without feeling like a companion app for any of them.
+ */
+
+:root {
+  /* Surfaces, from deepest to nearest. Each step is a real elevation, not a tint. */
+  --bg: #0e1014;
+  --bg-deep: #0a0c0f;
+  --panel: #161a20;
+  --panel-hi: #1a1f26;
+  --card: #20252d;
+  --card-hi: #262c35;
+  --overlay: rgba(8, 10, 13, 0.72);
+
+  /* Hairlines. Used sparingly — elevation and spacing do most of the separating. */
+  --line: rgba(255, 255, 255, 0.06);
+  --line-strong: rgba(255, 255, 255, 0.11);
+  --line-accent: rgba(201, 164, 90, 0.35);
+
+  /* Type. */
+  --text: #f2f2f2;
+  --text-dim: #a4a8af;
+  --text-faint: #6d737c;
+  --text-ghost: #4a4f57;
+
+  /* One accent, warm, used for the primary action and current state only. */
+  --accent: #c9a45a;
+  --accent-hi: #dcbb74;
+  --accent-lo: #9c7c3c;
+  --accent-wash: rgba(201, 164, 90, 0.12);
+  --accent-glow: rgba(201, 164, 90, 0.28);
+
+  --success: #59c27a;
+  --warning: #e3b341;
+  --error: #e06c75;
+  --info: #6ba7e0;
+
+  --success-wash: rgba(89, 194, 122, 0.13);
+  --warning-wash: rgba(227, 179, 65, 0.13);
+  --error-wash: rgba(224, 108, 117, 0.13);
+  --info-wash: rgba(107, 167, 224, 0.13);
+
+  --font: "Manrope", -apple-system, "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Mono", ui-monospace, monospace;
+
+  /* A restrained scale. Headings get size; body stays comfortable. */
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 26px;
+  --text-3xl: 34px;
+  --text-4xl: 46px;
+
+  /* Everything lands on an 8px grid; 4px exists only for tight icon gaps. */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --s7: 48px;
+  --s8: 64px;
+  --s9: 96px;
+
+  --r-sm: 6px;
+  --r: 10px;
+  --r-lg: 14px;
+  --r-xl: 20px;
+  --r-full: 999px;
+
+  /* Soft, wide shadows. Nothing hard-edged. */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 12px 40px -12px rgba(0, 0, 0, 0.7);
+  --shadow-xl: 0 24px 70px -20px rgba(0, 0, 0, 0.85);
+  --shadow-accent: 0 6px 24px -8px rgba(201, 164, 90, 0.5);
+
+  --sidebar-w: 264px;
+  --titlebar-h: 40px;
+
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
+  --fast: 120ms;
+  --base: 200ms;
+  --slow: 380ms;
+
+  --z-sticky: 10;
+  --z-overlay: 100;
+  --z-modal: 200;
+  --z-toast: 300;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --fast: 1ms;
+    --base: 1ms;
+    --slow: 1ms;
+  }
+}
+
+:root[data-reduce-motion="true"] {
+  --fast: 1ms;
+  --base: 1ms;
+  --slow: 1ms;
+}
+
+/* Accent variants. The shell stays neutral either way; only the action colour moves. */
+:root[data-accent="ember"] {
+  --accent: #d97757;
+  --accent-hi: #e89478;
+  --accent-lo: #a85539;
+  --accent-wash: rgba(217, 119, 87, 0.12);
+  --accent-glow: rgba(217, 119, 87, 0.28);
+  --line-accent: rgba(217, 119, 87, 0.35);
+  --shadow-accent: 0 6px 24px -8px rgba(217, 119, 87, 0.5);
+}
+
+:root[data-accent="steel"] {
+  --accent: #7d93b2;
+  --accent-hi: #9db0ca;
+  --accent-lo: #5c6e88;
+  --accent-wash: rgba(125, 147, 178, 0.12);
+  --accent-glow: rgba(125, 147, 178, 0.28);
+  --line-accent: rgba(125, 147, 178, 0.35);
+  --shadow-accent: 0 6px 24px -8px rgba(125, 147, 178, 0.5);
+}
+
+:root[data-accent="moss"] {
+  --accent: #7fa878;
+  --accent-hi: #9cc294;
+  --accent-lo: #5d7f58;
+  --accent-wash: rgba(127, 168, 120, 0.12);
+  --accent-glow: rgba(127, 168, 120, 0.28);
+  --line-accent: rgba(127, 168, 120, 0.35);
+  --shadow-accent: 0 6px 24px -8px rgba(127, 168, 120, 0.5);
+}
