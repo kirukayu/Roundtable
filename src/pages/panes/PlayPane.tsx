@@ -34,7 +34,7 @@ export default function PlayPane({
           icon={Icon.Layers}
           title="No profile yet"
           action={
-            <button type="button" className="btn btn--a" onClick={onCreateProfile}>
+            <button type="button" className="btn btn--solid" onClick={onCreateProfile}>
               <Icon.Plus size={15} />
               Create one
             </button>
@@ -59,7 +59,7 @@ export default function PlayPane({
         <Card
           title="This launch"
           action={
-            <button type="button" className="btn btn--g btn--s" onClick={onPatch}>
+            <button type="button" className="btn btn--ghost btn--sm" onClick={onPatch}>
               Write config
             </button>
           }
@@ -67,13 +67,13 @@ export default function PlayPane({
           {prepared ? (
             <>
               <div className="row wrap" style={{ gap: "var(--s2)", marginBottom: "var(--s4)" }}>
-                <Chip tone="a">{routeName(prepared.plan.route)}</Chip>
+                <Chip tone="solid">{routeName(prepared.plan.route)}</Chip>
                 {prepared.plan.coopEnabled && <Chip tone="ok">Co-op</Chip>}
                 {prepared.plan.skipSteamInit && <Chip>skip-steam-init</Chip>}
               </div>
               <ol className="col2" style={{ margin: 0, paddingLeft: 18, fontSize: "var(--t-sm)" }}>
                 {prepared.plan.steps.map((step, index) => (
-                  <li key={index} className="dim">
+                  <li key={index} className="w3">
                     {step}
                   </li>
                 ))}
@@ -87,7 +87,7 @@ export default function PlayPane({
         <Card
           title="Profile"
           action={
-            <button type="button" className="btn btn--g btn--s" onClick={onManageMods}>
+            <button type="button" className="btn btn--ghost btn--sm" onClick={onManageMods}>
               Manage
             </button>
           }
@@ -114,12 +114,12 @@ export default function PlayPane({
       <Card title="Where things live">
         <div className="col2">
           <div className="between">
-            <span className="dim" style={{ fontSize: "var(--t-sm)" }}>
+            <span className="w3" style={{ fontSize: "var(--t-sm)" }}>
               Game
             </span>
             <button
               type="button"
-              className="btn btn--g btn--s"
+              className="btn btn--ghost btn--sm"
               onClick={() => void api.openPath(install.root)}
               title={install.root}
             >
@@ -152,7 +152,7 @@ export default function PlayPane({
 function Line({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
   return (
     <div className="between">
-      <span className="dim" style={{ fontSize: "var(--t-sm)" }}>
+      <span className="w3" style={{ fontSize: "var(--t-sm)" }}>
         {k}
       </span>
       <span

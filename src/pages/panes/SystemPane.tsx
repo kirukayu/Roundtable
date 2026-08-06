@@ -57,7 +57,7 @@ export default function SystemPane({
           action={
             <button
               type="button"
-              className="btn btn--a btn--s"
+              className="btn btn--solid btn--sm"
               disabled={chosen.size === 0 || clearing}
               onClick={async () => {
                 setClearing(true);
@@ -153,7 +153,7 @@ export default function SystemPane({
               {eac.state !== "not-present" && (
                 <button
                   type="button"
-                  className={`btn btn--w${eac.state === "bypassed" ? " btn--a" : ""}`}
+                  className={`btn btn--wide${eac.state === "bypassed" ? " btn--solid" : ""}`}
                   onClick={() => setConfirmEac(true)}
                 >
                   {eac.state === "bypassed" ? "Restore anti-cheat" : "Bypass anti-cheat"}
@@ -229,7 +229,7 @@ export default function SystemPane({
             <div className="row" style={{ gap: "var(--s2)" }}>
               <button
                 type="button"
-                className="btn btn--s"
+                className="btn btn--sm"
                 onClick={() => void api.openPath(install.root)}
               >
                 <Icon.Folder size={13} />
@@ -237,7 +237,7 @@ export default function SystemPane({
               </button>
               <button
                 type="button"
-                className="btn btn--s btn--bad"
+                className="btn btn--sm btn--bad"
                 onClick={() => setConfirmForget(true)}
               >
                 Forget

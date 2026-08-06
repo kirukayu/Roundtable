@@ -1,7 +1,10 @@
+pub mod codex;
 pub mod commands;
 pub mod coop;
 pub mod dialog;
+pub mod diagnose;
 pub mod eac;
+pub mod edition;
 pub mod error;
 pub mod formats;
 pub mod game;
@@ -9,6 +12,7 @@ pub mod games;
 pub mod install;
 pub mod launch;
 pub mod loader;
+pub mod matchup;
 pub mod mods;
 pub mod net;
 pub mod presence;
@@ -17,6 +21,7 @@ pub mod server;
 pub mod settings;
 pub mod steam;
 pub mod sys;
+pub mod wiki;
 
 use std::sync::Arc;
 

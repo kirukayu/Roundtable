@@ -2,11 +2,21 @@ import type {
   BackupRecord,
   CacheLocation,
   CleanReport,
+  CodexResult,
+  CodexState,
+  Comparison,
   ConflictReport,
   ConversionReport,
   CoopSettings,
   EacStatus,
+  EditionInstall,
+  EditionJob,
+  EditionStatus,
   FieldSpec,
+  DiagnoseReport,
+  Fingerprint,
+  WikiPage,
+  WikiSearchResult,
   GameId,
   GameInfo,
   Installation,
@@ -138,6 +148,52 @@ export const api = {
 
   /** Which title is running, if any. One call covers every game. */
   runningGame: async () => (await get<{ game: GameId | null }>("/running")).game,
+
+  /* Editions: total conversions with their own loader, saves and cover. */
+  editions: (game: GameId, coop: boolean) =>
+    get<EditionStatus[]>("/editions", { game, coop: String(coop) }),
+  editionLocate: (edition: string, path: string) =>
+    post<EditionInstall>("/editions/locate", { edition, path }),
+  editionPatch: (game: GameId, edition: string, coop: boolean) =>
+    post<PatchReport>("/editions/patch", { game, edition, coop }),
+  editionRun: (game: GameId, edition: string, coop: boolean) =>
+    post<{ pid: number; route: string }>("/editions/run", { game, edition, coop }),
+  /** Returns as soon as unpacking starts; watch `editionJob` for progress. */
+  editionInstall: (game: GameId, edition: string, archive: string, destination?: string) =>
+    post<{ started: boolean }>("/editions/install", { game, edition, archive, destination }),
+  editionJob: () => get<EditionJob>("/editions/job"),
+
+  /* The codex. Cached on disk, so search never touches the network. */
+  codex: (query: string, kind?: string, edition?: string | null) =>
+    get<CodexResult>("/codex", { q: query, kind, edition: edition ?? undefined }),
+  codexSync: () => post<{ started: boolean }>("/codex/sync", {}),
+  codexState: () => get<CodexState>("/codex/state"),
+
+  /* The wikis, mirrored. Titles are indexed in full; bodies arrive on open. */
+  wiki: (query: string, edition?: string | null, source?: string, limit?: number) =>
+    get<WikiSearchResult>("/wiki", { q: query, edition: edition ?? undefined, source, limit }),
+  wikiPage: (title: string, edition?: string | null, source?: string, refresh = false) =>
+    get<WikiPage>("/wiki/page", {
+      title,
+      edition: edition ?? undefined,
+      source,
+      refresh: refresh ? "true" : undefined,
+    }),
+  wikiSync: (source?: string, edition?: string | null) =>
+    post<{ started: boolean }>(`/wiki/sync?${new URLSearchParams({
+      ...(source ? { source } : {}),
+      ...(edition ? { edition } : {}),
+    })}`, {}),
+
+  /* Every check Roundtable can run against this machine. */
+  diagnose: (game: GameId, edition?: string | null) =>
+    get<DiagnoseReport>("/diagnose", { game, edition: edition ?? undefined }),
+
+  /* Whether you and a friend can actually see each other. */
+  matchFingerprint: (game: GameId, edition?: string | null) =>
+    get<Fingerprint>("/match", { game, edition: edition ?? undefined }),
+  matchCompare: (game: GameId, theirs: string, edition?: string | null) =>
+    post<Comparison>("/match/compare", { game, theirs, edition: edition ?? null }),
 
   savesDiscover: (game: GameId) => get<SaveFolder[]>("/saves", { game }),
   savesInspect: (path: string) => get<SaveSummary>("/saves/inspect", { path }),

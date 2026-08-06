@@ -122,7 +122,7 @@ export default function ModsPane({
       <div className="between">
         <div className="row" style={{ gap: "var(--s2)" }}>
           {profiles.map((entry) => (
-            <Chip key={entry.id} tone={entry.id === draft?.id ? "a" : undefined}>
+            <Chip key={entry.id} tone={entry.id === draft?.id ? "solid" : undefined}>
               {entry.name}
             </Chip>
           ))}
@@ -132,7 +132,7 @@ export default function ModsPane({
             <>
               <button
                 type="button"
-                className="btn btn--s"
+                className="btn btn--sm"
                 onClick={() => setSettingsOpen(true)}
               >
                 <Icon.Settings size={14} />
@@ -140,7 +140,7 @@ export default function ModsPane({
               </button>
               <button
                 type="button"
-                className="btn btn--s"
+                className="btn btn--sm"
                 disabled={inOrder.filter((p) => p.entry.enabled).length < 2}
                 onClick={async () => {
                   const report = await toast.run("Conflicts checked", () =>
@@ -154,13 +154,13 @@ export default function ModsPane({
               </button>
             </>
           )}
-          <button type="button" className="btn btn--s" onClick={addFolder} disabled={busy}>
+          <button type="button" className="btn btn--sm" onClick={addFolder} disabled={busy}>
             <Icon.Folder size={14} />
             Folder
           </button>
           <button
             type="button"
-            className="btn btn--a btn--s"
+            className="btn btn--solid btn--sm"
             onClick={addArchive}
             disabled={busy}
           >
@@ -177,7 +177,7 @@ export default function ModsPane({
             title="No mods yet"
             action={
               <div className="row" style={{ gap: "var(--s2)" }}>
-                <button type="button" className="btn btn--a" onClick={addArchive}>
+                <button type="button" className="btn btn--solid" onClick={addArchive}>
                   <Icon.Plus size={15} />
                   Add an archive
                 </button>
@@ -220,7 +220,7 @@ export default function ModsPane({
                     <div className="row" style={{ gap: 2 }}>
                       <button
                         type="button"
-                        className="btn btn--g btn--s btn--i"
+                        className="btn btn--ghost btn--sm btn--icon"
                         aria-label="Move up"
                         disabled={index === 0}
                         onClick={() => move(index, -1)}
@@ -229,7 +229,7 @@ export default function ModsPane({
                       </button>
                       <button
                         type="button"
-                        className="btn btn--g btn--s btn--i"
+                        className="btn btn--ghost btn--sm btn--icon"
                         aria-label="Move down"
                         disabled={index === inOrder.length - 1}
                         onClick={() => move(index, 1)}
@@ -246,7 +246,7 @@ export default function ModsPane({
                       />
                       <button
                         type="button"
-                        className="btn btn--g btn--s btn--i"
+                        className="btn btn--ghost btn--sm btn--icon"
                         aria-label="Remove from profile"
                         onClick={() => removeFromProfile(mod.id)}
                       >
@@ -281,7 +281,7 @@ export default function ModsPane({
                     <div className="row" style={{ gap: 2 }}>
                       <button
                         type="button"
-                        className="btn btn--g btn--s btn--i"
+                        className="btn btn--ghost btn--sm btn--icon"
                         aria-label="Open folder"
                         onClick={() => void api.openPath(mod.path)}
                       >
@@ -289,7 +289,7 @@ export default function ModsPane({
                       </button>
                       <button
                         type="button"
-                        className="btn btn--g btn--s btn--i btn--bad"
+                        className="btn btn--ghost btn--sm btn--icon btn--bad"
                         aria-label="Delete"
                         onClick={() => setRemoving(mod)}
                       >
@@ -298,7 +298,7 @@ export default function ModsPane({
                       {draft && (
                         <button
                           type="button"
-                          className="btn btn--s"
+                          className="btn btn--sm"
                           onClick={() => addToProfile(mod)}
                         >
                           Add

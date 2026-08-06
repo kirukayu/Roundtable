@@ -22,6 +22,16 @@ pub struct AppState {
     pub settings: Mutex<Settings>,
     pub presence: crate::presence::Presence,
     pub http: reqwest::Client,
+    /// Progress of an edition being unpacked. Extraction runs on its own thread
+    /// and writes here; the interface polls it. An eight gigabyte archive takes
+    /// minutes, and a request that just blocks tells the user nothing.
+    pub edition_job: Mutex<crate::edition::EditionJob>,
+    /// The codex, loaded from disk on first use and kept for the session. Two
+    /// and a half thousand rows is nothing to hold and everything to re-read on
+    /// each keystroke.
+    pub codex: Mutex<Option<Vec<crate::codex::CodexEntry>>>,
+    pub codex_job: Mutex<crate::codex::CodexState>,
+    pub wiki_job: Mutex<crate::wiki::WikiIndexState>,
 }
 
 impl AppState {
@@ -40,7 +50,25 @@ impl AppState {
                 .timeout(std::time::Duration::from_secs(30))
                 .build()
                 .unwrap_or_default(),
+            edition_job: Mutex::new(crate::edition::EditionJob::default()),
+            codex: Mutex::new(None),
+            codex_job: Mutex::new(crate::codex::CodexState::default()),
+            wiki_job: Mutex::new(crate::wiki::WikiIndexState::default()),
         }
+    }
+
+    /// The codex, reading it from disk the first time it is asked for.
+    pub fn codex(&self) -> Vec<crate::codex::CodexEntry> {
+        let mut slot = self.codex.lock();
+        if slot.is_none() {
+            *slot = Some(crate::codex::load(&self.app_data));
+        }
+        slot.clone().unwrap_or_default()
+    }
+
+    /// Drops the in-memory copy so the next read picks up a finished sync.
+    pub fn forget_codex(&self) {
+        *self.codex.lock() = None;
     }
 
     fn persist(&self) -> Result<()> {
@@ -48,7 +76,7 @@ impl AppState {
     }
 
     /// Resolves the installation the user is currently working with.
-    fn active_install(&self, game: Game) -> Result<Installation> {
+    pub fn active_install(&self, game: Game) -> Result<Installation> {
         let root = {
             let settings = self.settings.lock();
             settings.install_for(game).map(|i| i.root.clone())

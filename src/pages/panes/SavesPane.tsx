@@ -1,6 +1,8 @@
+import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Icon } from "../../components/Icons";
+import { EASE, SOFT } from "../../components/Motion";
 import { Blank, Card, Chip, Confirm, Modal, Skeleton, useToast } from "../../components/ui";
 import { api } from "../../lib/ipc";
 import { bytes, exact, playtime, when } from "../../lib/format";
@@ -10,27 +12,52 @@ import type {
   SaveEntry,
   SaveFolder,
   SaveSummary,
+  SlotSummary,
   SteamAccount,
 } from "../../lib/types";
 
 /**
- * Saves, presented as characters rather than as files.
+ * Saves, as characters.
  *
- * The list on the left is every container Roundtable found; the panel on the right
- * is who lives inside the selected one. Transfer and conversion are actions on a
- * character, not separate screens.
+ * Nobody thinks in `.sl2` files. They think about the level 90 mage they want on
+ * the co-op save, so that is the unit here: every character in every file, in
+ * one grid, each with the things you can do to it. The files themselves become a
+ * filter along the top rather than a list you have to navigate first.
  */
+
+/**
+ * What a save file is, in words.
+ *
+ * "Co-op" twice tells you nothing when both a vanilla and a Convergence co-op
+ * save exist side by side, and they do — the mod writes `ER0000.cnv.co2`.
+ */
+function saveLabel(entry: SaveEntry): string {
+  const name = entry.fileName.toLowerCase();
+  if (name.includes(".cnv")) return "Convergence";
+  if (entry.flavour === "seamless-coop") return "Co-op";
+  return "Solo";
+}
+
+/** A character, with enough about its file to act on it. */
+interface Character {
+  entry: SaveFolder["entries"][number];
+  folder: SaveFolder;
+  slot: SlotSummary;
+  summary: SaveSummary;
+}
+
 export default function SavesPane({ gameId }: { gameId: GameId }) {
   const toast = useToast();
   const [folders, setFolders] = useState<SaveFolder[] | null>(null);
   const [backups, setBackups] = useState<BackupRecord[]>([]);
   const [accounts, setAccounts] = useState<SteamAccount[]>([]);
-  const [selected, setSelected] = useState<SaveEntry | null>(null);
-  const [summary, setSummary] = useState<SaveSummary | null>(null);
-  const [transferOpen, setTransferOpen] = useState(false);
-  const [convertOpen, setConvertOpen] = useState(false);
+  const [summaries, setSummaries] = useState<Record<string, SaveSummary | null>>({});
+  const [filter, setFilter] = useState<string>("");
+  const [move, setMove] = useState<Character | null>(null);
+  const [convert, setConvert] = useState<SaveEntry | null>(null);
   const [showBackups, setShowBackups] = useState(false);
   const [restoring, setRestoring] = useState<BackupRecord | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     const [found, stored, steam] = await Promise.all([
@@ -41,230 +68,168 @@ export default function SavesPane({ gameId }: { gameId: GameId }) {
     setFolders(found);
     setBackups(stored);
     setAccounts(steam);
-    setSelected((current) => {
-      if (current && found.some((f) => f.entries.some((e) => e.path === current.path))) {
-        return current;
-      }
-      return found.flatMap((f) => f.entries).find((e) => e.flavour !== "game-backup") ?? null;
-    });
+
+    // Every container is read up front. There are rarely more than a handful,
+    // and reading them lazily is what made this feel like a file browser.
+    const files = found.flatMap((f) => f.entries).filter((e) => e.flavour !== "game-backup");
+    const read = await Promise.all(
+      files.map(async (entry) => {
+        try {
+          return [entry.path, await api.savesInspect(entry.path)] as const;
+        } catch {
+          return [entry.path, null] as const;
+        }
+      }),
+    );
+    setSummaries(Object.fromEntries(read));
   }, [gameId]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  useEffect(() => {
-    if (!selected) {
-      setSummary(null);
-      return;
-    }
-    let cancelled = false;
-    setSummary(null);
-    api
-      .savesInspect(selected.path)
-      .then((result) => !cancelled && setSummary(result))
-      .catch(() => !cancelled && setSummary(null));
-    return () => {
-      cancelled = true;
-    };
-  }, [selected]);
-
-  const entries = useMemo(
+  const files = useMemo(
     () => folders?.flatMap((f) => f.entries).filter((e) => e.flavour !== "game-backup") ?? [],
     [folders],
   );
 
+  const characters = useMemo<Character[]>(() => {
+    const out: Character[] = [];
+    for (const folder of folders ?? []) {
+      for (const entry of folder.entries) {
+        if (entry.flavour === "game-backup") continue;
+        const summary = summaries[entry.path];
+        if (!summary) continue;
+        for (const slot of summary.slots) {
+          if (slot.active) out.push({ entry, folder, slot, summary });
+        }
+      }
+    }
+    return out.sort((a, b) => b.slot.level - a.slot.level);
+  }, [folders, summaries]);
+
+  const shown = filter
+    ? characters.filter((character) => character.entry.path === filter)
+    : characters;
+
+  const snapshot = async (entry: SaveEntry) => {
+    setBusy(true);
+    try {
+      await toast.run("Snapshot taken", () => api.savesBackup(gameId, entry.path, "manual"));
+      setBackups(await api.savesBackups(gameId));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (folders === null) {
     return (
-      <div className="g2">
-        <Card><Skeleton variant="line" count={4} /></Card>
-        <Card><Skeleton variant="line" count={4} /></Card>
+      <div className="g3">
+        <Card><Skeleton variant="line" count={3} /></Card>
+        <Card><Skeleton variant="line" count={3} /></Card>
+        <Card><Skeleton variant="line" count={3} /></Card>
       </div>
     );
   }
 
-  if (folders.length === 0) {
+  if (files.length === 0) {
     return (
       <Card>
         <Blank icon={Icon.Save} title="No saves yet">
-          Nothing under <span className="mono">%APPDATA%</span>. Start the game once so it
-          creates a character, then come back.
+          Start the game once so it creates a character.
         </Blank>
       </Card>
     );
   }
 
-  const active = summary?.slots.filter((s) => s.active) ?? [];
-
   return (
-    <div className="col rev">
-      <div className="between">
-        <div className="row" style={{ gap: "var(--s2)" }}>
-          <Chip>{entries.length} save files</Chip>
-          <Chip>{backups.length} snapshots</Chip>
-        </div>
-        <div className="row" style={{ gap: "var(--s2)" }}>
-          <button type="button" className="btn btn--s" onClick={() => setShowBackups(true)}>
-            <Icon.Clock size={14} />
-            Snapshots
-          </button>
+    <div className="col">
+      <div className="sv__bar">
+        <div className="sv__files">
           <button
             type="button"
-            className="btn btn--s"
-            disabled={entries.length < 2}
-            onClick={() => setTransferOpen(true)}
+            className="codex__filter"
+            data-on={filter === ""}
+            onClick={() => setFilter("")}
           >
-            <Icon.Swap size={14} />
-            Transfer
+            All {characters.length}
           </button>
-          <button
-            type="button"
-            className="btn btn--a btn--s"
-            disabled={!selected}
-            onClick={async () => {
-              if (!selected) return;
-              const made = await toast.run("Snapshot taken", () =>
-                api.savesBackup(gameId, selected.path, "manual"),
-              );
-              if (made) setBackups(await api.savesBackups(gameId));
-            }}
-          >
-            <Icon.Save size={14} />
-            Back up
-          </button>
-        </div>
-      </div>
-
-      <div className="g2">
-        <Card title="Save files" flush>
-          <div className="rows" style={{ padding: "var(--s3)" }}>
-            {folders.map((folder) => (
-              <div key={folder.path}>
-                <div className="row" style={{ padding: "var(--s2) var(--s2) var(--s1)" }}>
-                  <span className="rw__s">
-                    {folder.accountName ?? folder.folderId ?? "Unknown account"}
-                  </span>
-                  {folder.likelyCracked ? (
-                    <Chip tone="warn">Non-Steam</Chip>
-                  ) : (
-                    <Chip tone="a">
-                      <Icon.Steam size={11} />
-                      Steam
-                    </Chip>
-                  )}
-                </div>
-                {folder.entries.map((entry) => (
-                  <button
-                    key={entry.path}
-                    type="button"
-                    className={`rw rw--a${selected?.path === entry.path ? " rw--on" : ""}`}
-                    onClick={() => setSelected(entry)}
-                  >
-                    <div className="grow" style={{ minWidth: 0 }}>
-                      <div className="rw__t mono truncate">{entry.fileName}</div>
-                      <div className="rw__s">
-                        {bytes(entry.sizeBytes)} · {when(entry.modified)}
-                      </div>
-                    </div>
-                    {entry.flavour === "seamless-coop" && <Chip tone="ok">co-op</Chip>}
-                    {entry.flavour === "game-backup" && <Chip>backup</Chip>}
-                  </button>
-                ))}
-              </div>
-            ))}
-          </div>
-        </Card>
-
-        <Card
-          title={selected ? selected.fileName : "Characters"}
-          action={
-            selected && (
+          {files.map((entry) => {
+            const count = summaries[entry.path]?.slots.filter((s) => s.active).length ?? 0;
+            return (
               <button
+                key={entry.path}
                 type="button"
-                className="btn btn--g btn--s"
-                onClick={() => setConvertOpen(true)}
+                className="codex__filter"
+                data-on={filter === entry.path}
+                onClick={() => setFilter(filter === entry.path ? "" : entry.path)}
+                title={entry.path}
               >
-                <Icon.Swap size={13} />
-                Convert
+                {saveLabel(entry)} · {count}
               </button>
-            )
-          }
-        >
-          {!selected ? (
-            <Blank icon={Icon.Save} title="Pick a save">
-              Select a file to see its characters.
-            </Blank>
-          ) : !summary ? (
-            <Skeleton variant="line" count={4} />
-          ) : (
-            <>
-              <div className="row" style={{ gap: "var(--s6)", marginBottom: "var(--s4)" }}>
-                <div>
-                  <div className="stat__v">{active.length}</div>
-                  <div className="stat__k">characters</div>
-                </div>
-                <div>
-                  <div className="stat__v" style={{ fontSize: "var(--text-lg)" }}>
-                    {summary.checksumsValid ? (
-                      <span style={{ color: "var(--success)" }}>Valid</span>
-                    ) : (
-                      <span style={{ color: "var(--error)" }}>Mismatch</span>
-                    )}
-                  </div>
-                  <div className="stat__k">checksums</div>
-                </div>
-                <div>
-                  <div className="stat__v mono" style={{ fontSize: "var(--text-sm)" }}>
-                    {summary.steamId}
-                  </div>
-                  <div className="stat__k">
-                    {accounts.find((a) => a.steamId64 === summary.steamId)?.personaName ??
-                      "account"}
-                  </div>
-                </div>
-              </div>
+            );
+          })}
+        </div>
 
-              {active.length === 0 ? (
-                <Blank icon={Icon.Users} title="No characters">
-                  All ten slots are empty.
-                </Blank>
-              ) : (
-                <div className="rows">
-                  {active.map((slot) => (
-                    <div key={slot.index} className="rw">
-                      <span className="mono faint" style={{ width: 16 }}>
-                        {slot.index + 1}
-                      </span>
-                      <div className="grow">
-                        <div className="rw__t">{slot.name.trim() || "Unnamed"}</div>
-                        <div className="rw__s">
-                          Level {slot.level} · {playtime(slot.secondsPlayed)}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-        </Card>
+        <div className="row" style={{ gap: "var(--s2)" }}>
+          <button type="button" className="btn btn--sm" onClick={() => setShowBackups(true)}>
+            <Icon.Clock size={13} />
+            Snapshots {backups.length > 0 ? backups.length : ""}
+          </button>
+        </div>
       </div>
 
-      {transferOpen && (
-        <TransferModal
+      {shown.length === 0 ? (
+        <Card>
+          <Blank
+            icon={Icon.Users}
+            title={filter ? "That save is empty" : "No characters yet"}
+          >
+            {filter
+              ? "All ten slots in this file are free."
+              : "The save files exist but nobody lives in them. Start the game and create a character."}
+          </Blank>
+        </Card>
+      ) : (
+        <motion.div
+          className="sv__grid"
+          initial="hidden"
+          animate="show"
+          variants={{ show: { transition: { staggerChildren: 0.05 } } }}
+        >
+          <AnimatePresence mode="popLayout">
+            {shown.map((character) => (
+              <CharacterCard
+                key={`${character.entry.path}-${character.slot.index}`}
+                character={character}
+                accounts={accounts}
+                busy={busy}
+                onMove={() => setMove(character)}
+                onConvert={() => setConvert(character.entry)}
+                onSnapshot={() => void snapshot(character.entry)}
+              />
+            ))}
+          </AnimatePresence>
+        </motion.div>
+      )}
+
+      {move && (
+        <MoveModal
           gameId={gameId}
-          entries={entries}
-          onClose={() => setTransferOpen(false)}
+          character={move}
+          files={files}
+          summaries={summaries}
+          onClose={() => setMove(null)}
           onDone={refresh}
         />
       )}
 
-      {convertOpen && selected && (
+      {convert && (
         <ConvertModal
           gameId={gameId}
-          entry={selected}
+          entry={convert}
           accounts={accounts}
-          onClose={() => setConvertOpen(false)}
+          onClose={() => setConvert(null)}
           onDone={refresh}
         />
       )}
@@ -273,8 +238,7 @@ export default function SavesPane({ gameId }: { gameId: GameId }) {
         <Modal title="Snapshots" wide onClose={() => setShowBackups(false)}>
           {backups.length === 0 ? (
             <Blank icon={Icon.Clock} title="No snapshots yet">
-              Roundtable takes one before every launch and before anything that writes to a
-              save.
+              One is taken before every launch and before anything that writes.
             </Blank>
           ) : (
             <div className="rows">
@@ -283,25 +247,21 @@ export default function SavesPane({ gameId }: { gameId: GameId }) {
                   <div className="grow" style={{ minWidth: 0 }}>
                     <div className="row" style={{ gap: "var(--s2)" }}>
                       <span className="rw__t">{backup.label}</span>
-                      {backup.automatic ? <Chip>auto</Chip> : <Chip tone="a">manual</Chip>}
+                      {backup.automatic ? <Chip>auto</Chip> : <Chip tone="solid">manual</Chip>}
                     </div>
                     <div className="rw__s">
                       {exact(backup.created)} · {bytes(backup.sizeBytes)}
                     </div>
                     {backup.characters.length > 0 && (
-                      <div className="rw__s">{backup.characters.join(" · ")}</div>
+                      <div className="rw__s truncate">{backup.characters.join(" · ")}</div>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    className="btn btn--s"
-                    onClick={() => setRestoring(backup)}
-                  >
+                  <button type="button" className="btn btn--sm" onClick={() => setRestoring(backup)}>
                     Restore
                   </button>
                   <button
                     type="button"
-                    className="btn btn--g btn--s btn--i btn--bad"
+                    className="btn btn--ghost btn--sm btn--icon btn--bad"
                     aria-label="Delete"
                     onClick={async () => {
                       await api.savesDeleteBackup(gameId, backup.id);
@@ -322,15 +282,9 @@ export default function SavesPane({ gameId }: { gameId: GameId }) {
           title="Restore this snapshot?"
           confirmLabel="Restore"
           body={
-            <>
-              <p>
-                <span className="mono">{restoring.fileName}</span> goes back to{" "}
-                <span className="mono">{restoring.origin}</span>.
-              </p>
-              <p className="fld__h">
-                Whatever is there now is snapshotted first, so this is reversible.
-              </p>
-            </>
+            <p className="fld__h">
+              Whatever is there now is snapshotted first, so this is reversible.
+            </p>
           }
           onCancel={() => setRestoring(null)}
           onConfirm={async () => {
@@ -344,177 +298,198 @@ export default function SavesPane({ gameId }: { gameId: GameId }) {
   );
 }
 
-function TransferModal({
+/* ── One character ────────────────────────────────────────────────── */
+
+function CharacterCard({
+  character,
+  accounts,
+  busy,
+  onMove,
+  onConvert,
+  onSnapshot,
+}: {
+  character: Character;
+  accounts: SteamAccount[];
+  busy: boolean;
+  onMove: () => void;
+  onConvert: () => void;
+  onSnapshot: () => void;
+}) {
+  const { slot, entry, folder, summary } = character;
+  const account =
+    accounts.find((a) => a.steamId64 === summary.steamId)?.personaName ??
+    folder.accountName ??
+    (folder.likelyCracked ? "Non-Steam" : "Unknown");
+
+  return (
+    <motion.article
+      className="sv__card"
+      layout
+      variants={{
+        hidden: { opacity: 0, y: 18 },
+        show: { opacity: 1, y: 0, transition: { duration: 0.6, ease: EASE } },
+      }}
+      exit={{ opacity: 0, scale: 0.97, transition: { duration: 0.25 } }}
+      whileHover={{ y: -3 }}
+      transition={{ duration: 0.4, ease: SOFT }}
+    >
+      <header className="sv__top">
+        <div className="sv__level">{slot.level}</div>
+        <div className="sv__who">
+          <span className="sv__name">{slot.name.trim() || "Unnamed"}</span>
+          <span className="sv__meta">
+            {playtime(slot.secondsPlayed)} · slot {slot.index + 1}
+          </span>
+        </div>
+        {entry.flavour === "seamless-coop" ? <Chip tone="ok">Co-op</Chip> : <Chip>Solo</Chip>}
+      </header>
+
+      <div className="sv__facts">
+        <span className="sv__fact">
+          <span className="w4">Account</span>
+          <span className="truncate">{account}</span>
+        </span>
+        <span className="sv__fact">
+          <span className="w4">Saved</span>
+          <span>{when(entry.modified)}</span>
+        </span>
+        {!summary.checksumsValid && <Chip tone="bad">Checksum mismatch</Chip>}
+      </div>
+
+      <footer className="sv__acts">
+        <button type="button" className="btn btn--ghost btn--sm" onClick={onMove}>
+          <Icon.Swap size={13} />
+          Move
+        </button>
+        <button type="button" className="btn btn--ghost btn--sm" onClick={onConvert}>
+          Convert
+        </button>
+        <button
+          type="button"
+          className="btn btn--ghost btn--sm"
+          onClick={onSnapshot}
+          disabled={busy}
+        >
+          <Icon.Save size={13} />
+          Snapshot
+        </button>
+      </footer>
+    </motion.article>
+  );
+}
+
+/* ── Moving one character ─────────────────────────────────────────── */
+
+/**
+ * Moving starts from a character rather than from two file pickers.
+ *
+ * You already chose who; the only question left is which save they go into, and
+ * the destination slot is picked automatically because nobody cares which of
+ * the ten empty slots it lands in.
+ */
+function MoveModal({
   gameId,
-  entries,
+  character,
+  files,
+  summaries,
   onClose,
   onDone,
 }: {
   gameId: GameId;
-  entries: SaveEntry[];
+  character: Character;
+  files: SaveEntry[];
+  summaries: Record<string, SaveSummary | null>;
   onClose: () => void;
   onDone: () => Promise<void>;
 }) {
   const toast = useToast();
-  const [from, setFrom] = useState(entries[0]?.path ?? "");
-  const [to, setTo] = useState(entries[1]?.path ?? "");
-  const [fromSummary, setFromSummary] = useState<SaveSummary | null>(null);
-  const [toSummary, setToSummary] = useState<SaveSummary | null>(null);
-  const [picked, setPicked] = useState<number[]>([]);
+  const targets = files.filter((file) => file.path !== character.entry.path);
+  const [to, setTo] = useState(targets[0]?.path ?? "");
+  const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    if (!from) return;
-    api.savesInspect(from).then(setFromSummary).catch(() => setFromSummary(null));
-    setPicked([]);
-  }, [from]);
-
-  useEffect(() => {
-    if (!to) return;
-    api.savesInspect(to).then(setToSummary).catch(() => setToSummary(null));
-  }, [to]);
-
-  const free = toSummary?.slots.filter((s) => !s.active).map((s) => s.index) ?? [];
-  const ok = from !== to && picked.length > 0 && picked.length <= free.length;
+  const destination = summaries[to] ?? null;
+  const free = destination?.slots.filter((s) => !s.active).map((s) => s.index) ?? [];
+  const ok = Boolean(to) && free.length > 0;
 
   return (
     <Modal
-      title="Move characters"
-      wide
+      title={`Move ${character.slot.name.trim() || "this character"}`}
       onClose={onClose}
       footer={
         <>
-          <button type="button" className="btn btn--g" onClick={onClose}>
+          <button type="button" className="btn btn--ghost" onClick={onClose}>
             Cancel
           </button>
           <button
             type="button"
-            className="btn btn--a"
-            disabled={!ok}
+            className="btn btn--solid"
+            disabled={!ok || busy}
             onClick={async () => {
-              const pairs = picked.map((slot, i) => [slot, free[i]] as [number, number]);
-              const report = await toast.run("Characters copied", () =>
-                api.savesTransfer(gameId, from, to, pairs),
-              );
-              if (report) {
-                onClose();
-                await onDone();
+              setBusy(true);
+              try {
+                const done = await toast.run("Character moved", () =>
+                  api.savesTransfer(gameId, character.entry.path, to, [
+                    [character.slot.index, free[0]],
+                  ]),
+                );
+                if (done) {
+                  onClose();
+                  await onDone();
+                }
+              } finally {
+                setBusy(false);
               }
             }}
           >
-            Copy {picked.length || ""}
+            {busy ? <span className="spin" /> : null}
+            Move
           </button>
         </>
       }
     >
       <div className="col">
-        <div className="note">
-          <Icon.Info size={15} />
-          <div className="note__b">
-            The account id is written inside every save, which is why copying the file
-            between installations does not work. This rewrites it and recomputes the
-            checksums. The destination is snapshotted first.
-          </div>
-        </div>
-
-        <div className="g2">
-          <div className="col2">
-            <label className="fld__l" htmlFor="tfrom">From</label>
-            <select
-              id="tfrom"
-              className="sel2"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-            >
-              {entries.map((entry) => (
-                <option key={entry.path} value={entry.path}>
-                  {entry.fileName} · {entry.accountName ?? entry.folderId ?? "unknown"}
-                </option>
-              ))}
-            </select>
-            <div className="rows" style={{ marginTop: "var(--s2)" }}>
-              {(fromSummary?.slots ?? [])
-                .filter((s) => s.active)
-                .map((slot) => {
-                  const on = picked.includes(slot.index);
-                  return (
-                    <button
-                      key={slot.index}
-                      type="button"
-                      className={`rw rw--a${on ? " rw--on" : ""}`}
-                      onClick={() =>
-                        setPicked((current) =>
-                          on
-                            ? current.filter((i) => i !== slot.index)
-                            : [...current, slot.index],
-                        )
-                      }
-                    >
-                      <span style={{ width: 16, color: on ? "var(--accent)" : "transparent" }}>
-                        <Icon.Check size={14} />
-                      </span>
-                      <div className="grow">
-                        <div className="rw__t">{slot.name.trim() || "Unnamed"}</div>
-                        <div className="rw__s">
-                          Level {slot.level} · {playtime(slot.secondsPlayed)}
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
+        {targets.length === 0 ? (
+          <div className="note note--warn">
+            <Icon.Warning size={15} />
+            <div className="note__b">
+              There is only one save file, so there is nowhere to move this to.
             </div>
           </div>
+        ) : (
+          <>
+            <div className="fld">
+              <label className="fld__l" htmlFor="mv-to">Into</label>
+              <select id="mv-to" className="sel2" value={to} onChange={(e) => setTo(e.target.value)}>
+                {targets.map((file) => (
+                  <option key={file.path} value={file.path}>
+                    {saveLabel(file)} · {file.accountName ?? file.folderId ?? "unknown account"}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          <div className="col2">
-            <label className="fld__l" htmlFor="tto">To</label>
-            <select
-              id="tto"
-              className="sel2"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-            >
-              {entries.map((entry) => (
-                <option key={entry.path} value={entry.path}>
-                  {entry.fileName} · {entry.accountName ?? entry.folderId ?? "unknown"}
-                </option>
-              ))}
-            </select>
-            <p className="fld__h">
-              {free.length} free slot{free.length === 1 ? "" : "s"}
-            </p>
-
-            {from === to && (
+            {free.length === 0 ? (
               <div className="note note--bad">
                 <Icon.Warning size={15} />
-                <div className="note__b">Pick two different files.</div>
+                <div className="note__b">That save has no free slot. All ten are taken.</div>
               </div>
-            )}
-            {from !== to && picked.length > free.length && (
-              <div className="note note--bad">
-                <Icon.Warning size={15} />
+            ) : (
+              <div className="note">
+                <Icon.Info size={15} />
                 <div className="note__b">
-                  {picked.length} chosen but only {free.length} free slots.
+                  Lands in slot {free[0] + 1}. The account id inside the file is rewritten
+                  and the checksums recomputed, and the destination is snapshotted first.
                 </div>
               </div>
             )}
-            {ok && (
-              <div className="rows">
-                {picked.map((slot, i) => (
-                  <div key={slot} className="rw">
-                    <span className="grow rw__title">
-                      {fromSummary?.slots[slot]?.name.trim() || "Unnamed"}
-                    </span>
-                    <Icon.Chevron size={13} />
-                    <span className="mono">slot {free[i] + 1}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+          </>
+        )}
       </div>
     </Modal>
   );
 }
+
+/* ── Converting a file ────────────────────────────────────────────── */
 
 function ConvertModal({
   gameId,
@@ -530,74 +505,57 @@ function ConvertModal({
   onDone: () => Promise<void>;
 }) {
   const toast = useToast();
-  const [extension, setExtension] = useState(entry.extension === "sl2" ? "co2" : "sl2");
+  const target = entry.extension === "sl2" ? "co2" : "sl2";
   const [rebind, setRebind] = useState("");
+  const [busy, setBusy] = useState(false);
 
   return (
     <Modal
-      title="Convert save"
+      title="Convert this save"
       onClose={onClose}
       footer={
         <>
-          <button type="button" className="btn btn--g" onClick={onClose}>
+          <button type="button" className="btn btn--ghost" onClick={onClose}>
             Cancel
           </button>
           <button
             type="button"
-            className="btn btn--a"
+            className="btn btn--solid"
+            disabled={busy}
             onClick={async () => {
-              const done = await toast.run("Save converted", () =>
-                api.savesConvert(
-                  gameId,
-                  entry.path,
-                  extension,
-                  rebind ? Number(rebind) : undefined,
-                ),
-              );
-              if (done) {
-                onClose();
-                await onDone();
+              setBusy(true);
+              try {
+                const done = await toast.run("Save converted", () =>
+                  api.savesConvert(gameId, entry.path, target, rebind ? Number(rebind) : undefined),
+                );
+                if (done) {
+                  onClose();
+                  await onDone();
+                }
+              } finally {
+                setBusy(false);
               }
             }}
           >
-            Convert
+            {busy ? <span className="spin" /> : null}
+            Make it {target === "co2" ? "co-op" : "solo"}
           </button>
         </>
       }
     >
       <div className="col">
-        <p className="fld__h">
-          A copy is written beside the original with the new extension. Nothing is
-          overwritten.
-        </p>
-
-        <div className="fld">
-          <label className="fld__l" htmlFor="cext">Extension</label>
-          <div className="row" style={{ gap: "var(--s2)" }}>
-            <input
-              id="cext"
-              className="in mono"
-              style={{ maxWidth: 140 }}
-              value={extension}
-              onChange={(e) => setExtension(e.target.value)}
-            />
-            <button type="button" className="btn btn--s" onClick={() => setExtension("sl2")}>
-              sl2
-            </button>
-            <button type="button" className="btn btn--s" onClick={() => setExtension("co2")}>
-              co2
-            </button>
+        <div className="note">
+          <Icon.Info size={15} />
+          <div className="note__b">
+            A copy is written beside the original as{" "}
+            <span className="mono">.{target}</span>. Nothing is overwritten.
           </div>
-          <span className="fld__h">
-            <span className="mono">sl2</span> is the vanilla game;{" "}
-            <span className="mono">co2</span> is Seamless Co-op.
-          </span>
         </div>
 
         <div className="fld">
-          <label className="fld__l" htmlFor="creb">Give it to another account</label>
+          <label className="fld__l" htmlFor="cv-acct">Give it to another account</label>
           <select
-            id="creb"
+            id="cv-acct"
             className="sel2"
             value={rebind}
             onChange={(e) => setRebind(e.target.value)}
@@ -605,13 +563,11 @@ function ConvertModal({
             <option value="">Keep the current account</option>
             {accounts.map((account) => (
               <option key={account.steamId64} value={String(account.steamId64)}>
-                {account.personaName || account.accountName} · {account.steamId64}
+                {account.personaName || account.accountName}
               </option>
             ))}
           </select>
-          <span className="fld__h">
-            Needed when the save came from a different copy of the game.
-          </span>
+          <span className="fld__h">Needed when the save came from a different copy.</span>
         </div>
       </div>
     </Modal>

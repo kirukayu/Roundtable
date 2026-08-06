@@ -179,6 +179,168 @@ export interface PreparedLaunch {
   commandLine: string;
 }
 
+/* ── Editions ─────────────────────────────────────────────────────── */
+
+/** A total conversion Roundtable knows how to drive as its own game. */
+export interface EditionSpec {
+  id: string;
+  game: GameId;
+  name: string;
+  short: string;
+  note: string;
+  site: string;
+  savefile: string;
+  savefileCoop: string;
+}
+
+export interface EditionInstall {
+  id: string;
+  name: string;
+  root: string;
+  version: string | null;
+  me3: string | null;
+  profile: string | null;
+  profileCoop: string | null;
+  coopDll: string | null;
+  sizeBytes: number | null;
+  /** The mod refuses to run from inside the game's own folder. */
+  insideGameDir: boolean;
+}
+
+export interface EditionStatus {
+  spec: EditionSpec;
+  install: EditionInstall | null;
+  plan: LaunchPlan | null;
+  commandLine: string | null;
+  suggestedDestination: string;
+}
+
+export interface EditionJob {
+  edition: string;
+  running: boolean;
+  done: boolean;
+  message: string;
+  filesDone: number;
+  filesTotal: number;
+  bytesDone: number;
+  bytesTotal: number;
+  destination: string | null;
+  error: string | null;
+}
+
+/* ── Codex ────────────────────────────────────────────────────────── */
+
+export interface CodexFact {
+  label: string;
+  value: string;
+}
+
+export interface CodexHit {
+  id: string;
+  kind: string;
+  kindLabel: string;
+  name: string;
+  image: string | null;
+  description: string | null;
+  facts: CodexFact[];
+  /** Routed per edition: Fextralife normally, the mod's wiki when one is active. */
+  wiki: string;
+}
+
+export interface CodexState {
+  entries: number;
+  kinds: number;
+  syncing: boolean;
+  message: string;
+  doneKinds: number;
+  totalKinds: number;
+  error: string | null;
+}
+
+export interface CodexResult {
+  hits: CodexHit[];
+  total: number;
+  /** [id, label, count] per collection. */
+  kinds: [string, string, number][];
+  state: CodexState;
+}
+
+/* ── Wiki ─────────────────────────────────────────────────────────── */
+
+export interface WikiSource {
+  id: string;
+  name: string;
+}
+
+export interface WikiPage {
+  source: string;
+  title: string;
+  /** Already stripped of scripts, handlers and javascript: links. */
+  html: string;
+  origin: string;
+}
+
+export interface WikiIndexState {
+  source: string;
+  titles: number;
+  cachedPages: number;
+  syncing: boolean;
+  message: string;
+  error: string | null;
+}
+
+export interface WikiSearchResult {
+  source: WikiSource;
+  sources: WikiSource[];
+  titles: string[];
+  state: WikiIndexState;
+}
+
+/* ── Diagnostics ──────────────────────────────────────────────────── */
+
+export interface Finding {
+  id: string;
+  level: "blocker" | "warning" | "note" | "pass";
+  title: string;
+  detail: string;
+  /** The error text this would produce, for recognising a problem you have. */
+  symptom: string | null;
+  fix: string | null;
+}
+
+export interface DiagnoseReport {
+  findings: Finding[];
+  blockers: number;
+  warnings: number;
+}
+
+/* ── Co-op match check ────────────────────────────────────────────── */
+
+export interface MatchTrait {
+  key: string;
+  label: string;
+  value: string;
+  matters: string;
+}
+
+export interface Fingerprint {
+  traits: MatchTrait[];
+  block: string;
+}
+
+export interface MatchDifference {
+  label: string;
+  mine: string;
+  theirs: string;
+  matters: string;
+}
+
+export interface Comparison {
+  verdict: "match" | "differs" | "unreadable";
+  differences: MatchDifference[];
+  unknown: string[];
+}
+
 export interface PatchReport {
   route: LaunchRoute;
   written: string[];

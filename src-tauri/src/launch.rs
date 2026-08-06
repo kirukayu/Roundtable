@@ -63,21 +63,21 @@ pub struct Notice {
 }
 
 impl Notice {
-    fn info(title: &str, detail: impl Into<String>) -> Notice {
+    pub fn info(title: &str, detail: impl Into<String>) -> Notice {
         Notice {
             severity: Severity::Info,
             title: title.into(),
             detail: detail.into(),
         }
     }
-    fn warn(title: &str, detail: impl Into<String>) -> Notice {
+    pub fn warn(title: &str, detail: impl Into<String>) -> Notice {
         Notice {
             severity: Severity::Warning,
             title: title.into(),
             detail: detail.into(),
         }
     }
-    fn blocker(title: &str, detail: impl Into<String>) -> Notice {
+    pub fn blocker(title: &str, detail: impl Into<String>) -> Notice {
         Notice {
             severity: Severity::Blocker,
             title: title.into(),

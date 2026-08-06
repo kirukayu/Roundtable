@@ -75,18 +75,42 @@ pub fn save_root(game: Game) -> Option<PathBuf> {
 }
 
 /// Additional roots used by Steamworks emulators that redirect the save path.
-fn extra_roots(game: Game) -> Vec<PathBuf> {
+///
+/// A cracked copy rarely writes to `%APPDATA%`. Each emulator has its own idea
+/// of where a save belongs, and missing one means the launcher reports "no saves
+/// yet" at somebody who has a hundred hours in the game.
+pub fn extra_roots(game: Game) -> Vec<PathBuf> {
     let mut roots = Vec::new();
+    let app_id = game.steam_app_id().to_string();
+
     if let Some(data) = dirs::data_dir() {
+        // Goldberg, both layouts it has used.
         roots.push(
             data.join("Goldberg SteamEmu Saves")
-                .join(game.steam_app_id().to_string())
+                .join(&app_id)
                 .join(game.appdata_folder()),
         );
+        roots.push(data.join("Goldberg SteamEmu Saves").join(&app_id));
+        // SmartSteamEmu.
+        roots.push(data.join("SmartSteamEmu").join(&app_id).join(game.appdata_folder()));
     }
+
     if let Some(docs) = dirs::document_dir() {
         roots.push(docs.join(game.appdata_folder()));
     }
+
+    // RUNE and the repacks built on it write under the public profile, which is
+    // outside every per-user directory the crate knows about. This is where the
+    // FreeTP build of ELDEN RING actually keeps its saves.
+    if let Some(drive) = std::env::var_os("SystemDrive") {
+        let public = PathBuf::from(drive).join("Users").join("Public").join("Documents");
+        for vendor in ["Steam", "EMPRESS"] {
+            roots.push(public.join(vendor).join("RUNE").join(&app_id));
+            roots.push(public.join(vendor).join(&app_id));
+        }
+        roots.push(public.join(game.appdata_folder()));
+    }
+
     roots.into_iter().filter(|p| p.is_dir()).collect()
 }
 

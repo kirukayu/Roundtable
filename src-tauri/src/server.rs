@@ -104,6 +104,23 @@ pub async fn start(app: Arc<AppState>) -> crate::error::Result<Server> {
         .route("/sys/caches", get(sys_caches))
         .route("/sys/caches/clear", post(sys_clear))
         .route("/sys/report", get(sys_report))
+        // Editions: total conversions that launch as a game of their own.
+        .route("/editions", get(editions))
+        .route("/editions/locate", post(edition_locate))
+        .route("/editions/patch", post(edition_patch))
+        .route("/editions/run", post(edition_run))
+        .route("/editions/install", post(edition_install))
+        .route("/editions/job", get(edition_job))
+        // The codex, and the check that two players can see each other.
+        .route("/codex", get(codex_search))
+        .route("/codex/sync", post(codex_sync))
+        .route("/codex/state", get(codex_state))
+        .route("/wiki", get(wiki_search))
+        .route("/wiki/page", get(wiki_page))
+        .route("/wiki/sync", post(wiki_sync))
+        .route("/diagnose", get(diagnose))
+        .route("/match", get(match_fingerprint))
+        .route("/match/compare", post(match_compare))
         .route("/open", post(open_path))
         // Native dialogs the browser cannot provide. The desktop window stays
         // running in the tray precisely to answer these.
@@ -511,6 +528,653 @@ fn plan_for(
         .join(game.appdata_folder())
         .join(profile_id);
     Ok((install, profile, library, loaders, work))
+}
+
+// ---------------------------------------------------------------------------
+// Codex
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+struct CodexQ {
+    #[serde(default)]
+    q: String,
+    kind: Option<String>,
+    #[serde(default)]
+    edition: Option<String>,
+    limit: Option<usize>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexHit {
+    #[serde(flatten)]
+    entry: crate::codex::CodexEntry,
+    kind_label: String,
+    wiki: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexResult {
+    hits: Vec<CodexHit>,
+    total: usize,
+    kinds: Vec<(String, String, usize)>,
+    state: crate::codex::CodexState,
+}
+
+async fn codex_search(State(ctx): State<Ctx>, Query(q): Query<CodexQ>) -> Response {
+    let all = ctx.app.codex();
+    let edition = q.edition.as_deref();
+
+    let mut kinds: Vec<(String, String, usize)> = Vec::new();
+    for (id, label) in crate::codex::KINDS {
+        let count = all.iter().filter(|e| e.kind == *id).count();
+        if count > 0 {
+            kinds.push(((*id).to_string(), (*label).to_string(), count));
+        }
+    }
+
+    let hits: Vec<CodexHit> = crate::codex::search(
+        &all,
+        &q.q,
+        q.kind.as_deref().filter(|k| !k.is_empty()),
+        q.limit.unwrap_or(60).min(200),
+    )
+    .into_iter()
+    .map(|entry| CodexHit {
+        kind_label: crate::codex::label_for(&entry.kind).to_string(),
+        wiki: entry.wiki_url(edition),
+        entry: entry.clone(),
+    })
+    .collect();
+
+    let mut state = ctx.app.codex_job.lock().clone();
+    state.entries = all.len();
+    state.kinds = kinds.len();
+
+    Json(CodexResult {
+        hits,
+        total: all.len(),
+        kinds,
+        state,
+    })
+    .into_response()
+}
+
+async fn codex_state(State(ctx): State<Ctx>) -> Response {
+    let mut state = ctx.app.codex_job.lock().clone();
+    state.entries = ctx.app.codex().len();
+    Json(state).into_response()
+}
+
+/// Downloads the codex in the background. The upstream throttles, so this can
+/// take a minute; the interface polls `codex/state`.
+async fn codex_sync(State(ctx): State<Ctx>) -> Response {
+    if ctx.app.codex_job.lock().syncing {
+        return out::<()>(Err(crate::error::Error::msg("already downloading")));
+    }
+    {
+        let mut job = ctx.app.codex_job.lock();
+        *job = crate::codex::CodexState {
+            syncing: true,
+            message: "Starting".into(),
+            total_kinds: crate::codex::KINDS.len(),
+            ..Default::default()
+        };
+    }
+
+    let app = Arc::clone(&ctx.app);
+    tokio::spawn(async move {
+        let http = app.http.clone();
+        let app_data = app.app_data.clone();
+        let reporter = Arc::clone(&app);
+
+        let result = crate::codex::sync(&http, &app_data, move |done, total, label| {
+            let mut job = reporter.codex_job.lock();
+            job.done_kinds = done;
+            job.total_kinds = total;
+            job.message = label.to_string();
+        })
+        .await;
+
+        let mut job = app.codex_job.lock();
+        job.syncing = false;
+        match result {
+            Ok(count) => {
+                job.message = format!("{count} entries");
+                job.error = None;
+            }
+            Err(error) => {
+                job.message = "Download failed".into();
+                job.error = Some(error.to_string());
+            }
+        }
+        drop(job);
+        app.forget_codex();
+    });
+
+    Json(json!({ "started": true })).into_response()
+}
+
+// ---------------------------------------------------------------------------
+// Wiki
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+struct WikiQ {
+    #[serde(default)]
+    q: String,
+    /// The edition on screen picks the wiki, unless a source is named outright.
+    #[serde(default)]
+    edition: Option<String>,
+    #[serde(default)]
+    source: Option<String>,
+    limit: Option<usize>,
+}
+
+fn wiki_source_for(q: &WikiQ) -> &'static crate::wiki::WikiSource {
+    q.source
+        .as_deref()
+        .and_then(crate::wiki::source)
+        .unwrap_or_else(|| crate::wiki::for_edition(q.edition.as_deref()))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WikiSearchResult {
+    source: crate::wiki::WikiSource,
+    sources: Vec<crate::wiki::WikiSource>,
+    titles: Vec<String>,
+    state: crate::wiki::WikiIndexState,
+}
+
+async fn wiki_search(State(ctx): State<Ctx>, Query(q): Query<WikiQ>) -> Response {
+    let source = wiki_source_for(&q);
+    let all = crate::wiki::titles(&ctx.app.app_data, source.id);
+
+    let mut state = ctx
+        .app
+        .wiki_job
+        .lock()
+        .clone();
+    state.source = source.id.to_string();
+    state.titles = all.len();
+    state.cached_pages = crate::wiki::cached_page_count(&ctx.app.app_data, source.id);
+
+    Json(WikiSearchResult {
+        source: *source,
+        sources: crate::wiki::SOURCES.to_vec(),
+        // The sidebar shows the whole contents of the wiki, so the cap is high:
+        // it is a list of strings, and holding it back would mean the mirror
+        // only appears to contain what fits on one screen.
+        titles: crate::wiki::search(&all, &q.q, q.limit.unwrap_or(200).min(6000))
+            .into_iter()
+            .cloned()
+            .collect(),
+        state,
+    })
+    .into_response()
+}
+
+#[derive(Deserialize)]
+struct WikiPageQ {
+    title: String,
+    #[serde(default)]
+    edition: Option<String>,
+    #[serde(default)]
+    source: Option<String>,
+    #[serde(default)]
+    refresh: bool,
+}
+
+async fn wiki_page(State(ctx): State<Ctx>, Query(q): Query<WikiPageQ>) -> Response {
+    let source = q
+        .source
+        .as_deref()
+        .and_then(crate::wiki::source)
+        .unwrap_or_else(|| crate::wiki::for_edition(q.edition.as_deref()));
+
+    out(crate::wiki::page(
+        &ctx.app.http,
+        &ctx.app.app_data,
+        source,
+        &q.title,
+        q.refresh,
+    )
+    .await)
+}
+
+/// Mirrors every article title so search covers the whole wiki.
+async fn wiki_sync(State(ctx): State<Ctx>, Query(q): Query<WikiQ>) -> Response {
+    if ctx.app.wiki_job.lock().syncing {
+        return out::<()>(Err(crate::error::Error::msg("already indexing")));
+    }
+    let source = wiki_source_for(&q);
+    {
+        let mut job = ctx.app.wiki_job.lock();
+        *job = crate::wiki::WikiIndexState {
+            source: source.id.to_string(),
+            syncing: true,
+            message: format!("Indexing {}", source.name),
+            ..Default::default()
+        };
+    }
+
+    let app = Arc::clone(&ctx.app);
+    tokio::spawn(async move {
+        let http = app.http.clone();
+        let app_data = app.app_data.clone();
+        let reporter = Arc::clone(&app);
+
+        let result = crate::wiki::sync_titles(&http, &app_data, source, move |seen| {
+            let mut job = reporter.wiki_job.lock();
+            job.titles = seen;
+            job.message = format!("{seen} articles");
+        })
+        .await;
+
+        let mut job = app.wiki_job.lock();
+        job.syncing = false;
+        match result {
+            Ok(count) => {
+                job.titles = count;
+                job.message = format!("{count} articles");
+                job.error = None;
+            }
+            Err(error) => {
+                job.message = "Indexing failed".into();
+                job.error = Some(error.to_string());
+            }
+        }
+    });
+
+    Json(json!({ "started": true })).into_response()
+}
+
+// ---------------------------------------------------------------------------
+// Co-op match check
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+struct MatchQ {
+    game: crate::games::Game,
+    #[serde(default)]
+    edition: Option<String>,
+}
+
+/// The regulation.bin that will actually load: an edition's own file wins.
+fn effective_regulation(
+    ctx: &Ctx,
+    install: &crate::game::Installation,
+    edition: Option<&str>,
+) -> Option<PathBuf> {
+    let spec = crate::edition::spec(edition?)?;
+    let found = resolve(ctx, spec, install)?;
+    let path = found.root.join("mod").join("regulation.bin");
+    path.is_file().then_some(path)
+}
+
+/// Every check Roundtable can run against this machine.
+async fn diagnose(State(ctx): State<Ctx>, Query(q): Query<MatchQ>) -> Response {
+    match ctx.app.active_install(q.game) {
+        Ok(install) => {
+            let regulation = effective_regulation(&ctx, &install, q.edition.as_deref());
+            Json(crate::diagnose::run(&install, regulation.as_deref())).into_response()
+        }
+        Err(error) => out::<()>(Err(error)),
+    }
+}
+
+async fn match_fingerprint(State(ctx): State<Ctx>, Query(q): Query<MatchQ>) -> Response {
+    match ctx.app.active_install(q.game) {
+        Ok(install) => {
+            let regulation = effective_regulation(&ctx, &install, q.edition.as_deref());
+            Json(crate::matchup::fingerprint(&install, regulation.as_deref())).into_response()
+        }
+        Err(error) => out::<()>(Err(error)),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MatchBody {
+    game: crate::games::Game,
+    #[serde(default)]
+    edition: Option<String>,
+    theirs: String,
+}
+
+async fn match_compare(State(ctx): State<Ctx>, Json(body): Json<MatchBody>) -> Response {
+    match ctx.app.active_install(body.game) {
+        Ok(install) => {
+            let regulation = effective_regulation(&ctx, &install, body.edition.as_deref());
+            let mine = crate::matchup::fingerprint(&install, regulation.as_deref());
+            Json(crate::matchup::compare(&mine, &body.theirs)).into_response()
+        }
+        Err(error) => out::<()>(Err(error)),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Editions
+// ---------------------------------------------------------------------------
+
+/// Everything the interface needs to draw one edition, installed or not.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EditionStatus {
+    spec: crate::edition::EditionSpec,
+    install: Option<crate::edition::EditionInstall>,
+    /// Present once the edition is on disk, so the plan can be shown before Play.
+    plan: Option<crate::launch::LaunchPlan>,
+    command_line: Option<String>,
+    /// Where Roundtable would unpack the archive, beside the game.
+    suggested_destination: PathBuf,
+}
+
+#[derive(Deserialize)]
+struct EditionQ {
+    game: crate::games::Game,
+    #[serde(default)]
+    coop: bool,
+}
+
+fn edition_context(
+    ctx: &Ctx,
+    game: crate::games::Game,
+) -> crate::error::Result<(crate::game::Installation, bool)> {
+    let install = ctx.app.active_install(game)?;
+    let mut system = sysinfo::System::new();
+    system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    let steam_running = crate::steam::is_running(&system);
+    Ok((install, steam_running))
+}
+
+/// Finds the remembered path for an edition, if the user pointed at one.
+fn remembered(ctx: &Ctx, id: &str) -> Option<PathBuf> {
+    ctx.app.settings.lock().editions.get(id).cloned()
+}
+
+fn resolve(
+    ctx: &Ctx,
+    spec: &crate::edition::EditionSpec,
+    install: &crate::game::Installation,
+) -> Option<crate::edition::EditionInstall> {
+    // A path the user chose by hand wins over anything found by scanning.
+    if let Some(path) = remembered(ctx, spec.id) {
+        if let Some(found) = crate::edition::probe(spec, &path) {
+            return Some(found);
+        }
+    }
+    crate::edition::discover(spec, install).into_iter().next()
+}
+
+async fn editions(State(ctx): State<Ctx>, Query(q): Query<EditionQ>) -> Response {
+    let (install, steam_running) = match edition_context(&ctx, q.game) {
+        Ok(pair) => pair,
+        // Without a located game there is nothing to attach an edition to, but
+        // the catalogue of what exists is still worth showing.
+        Err(_) => {
+            let list: Vec<EditionStatus> = crate::edition::for_game(q.game)
+                .into_iter()
+                .map(|spec| EditionStatus {
+                    spec: *spec,
+                    install: None,
+                    plan: None,
+                    command_line: None,
+                    suggested_destination: PathBuf::new(),
+                })
+                .collect();
+            return Json(list).into_response();
+        }
+    };
+
+    let list: Vec<EditionStatus> = crate::edition::for_game(q.game)
+        .into_iter()
+        .map(|spec| {
+            let found = resolve(&ctx, spec, &install);
+            let plan = found.as_ref().and_then(|edition| {
+                crate::edition::plan(spec, edition, &install, q.coop, steam_running).ok()
+            });
+            EditionStatus {
+                spec: *spec,
+                command_line: plan.as_ref().map(crate::launch::LaunchPlan::command_line),
+                install: found,
+                plan,
+                suggested_destination: crate::edition::default_destination(&install, spec),
+            }
+        })
+        .collect();
+
+    Json(list).into_response()
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EditionBody {
+    game: crate::games::Game,
+    edition: String,
+    #[serde(default)]
+    coop: bool,
+}
+
+/// The edition id already names its game, so the body does not carry one.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EditionLocateBody {
+    edition: String,
+    path: PathBuf,
+}
+
+/// Remembers a folder the user picked, after checking it really holds the mod.
+async fn edition_locate(State(ctx): State<Ctx>, Json(body): Json<EditionLocateBody>) -> Response {
+    let Some(spec) = crate::edition::spec(&body.edition) else {
+        return out::<()>(Err(crate::error::Error::msg("no such edition")));
+    };
+    match crate::edition::probe(spec, &body.path) {
+        Some(found) => {
+            {
+                let mut settings = ctx.app.settings.lock();
+                settings
+                    .editions
+                    .insert(spec.id.to_string(), body.path.clone());
+            }
+            let saved = ctx.app.settings.lock().clone().save(&ctx.app.app_data);
+            match saved {
+                Ok(()) => Json(found).into_response(),
+                Err(error) => out::<()>(Err(error)),
+            }
+        }
+        None => out::<()>(Err(crate::error::Error::msg(format!(
+            "{} does not look like {}: {} is missing",
+            body.path.display(),
+            spec.name,
+            spec.markers.join(", ")
+        )))),
+    }
+}
+
+fn plan_edition(
+    ctx: &Ctx,
+    body: &EditionBody,
+) -> crate::error::Result<(
+    &'static crate::edition::EditionSpec,
+    crate::edition::EditionInstall,
+    crate::game::Installation,
+    crate::launch::LaunchPlan,
+)> {
+    let spec = crate::edition::spec(&body.edition)
+        .ok_or_else(|| crate::error::Error::msg("no such edition"))?;
+    let (install, steam_running) = edition_context(ctx, body.game)?;
+    let found = resolve(ctx, spec, &install).ok_or_else(|| {
+        crate::error::Error::msg(format!("{} is not installed", spec.name))
+    })?;
+    let plan = crate::edition::plan(spec, &found, &install, body.coop, steam_running)?;
+    Ok((spec, found, install, plan))
+}
+
+async fn edition_patch(State(ctx): State<Ctx>, Json(body): Json<EditionBody>) -> Response {
+    match plan_edition(&ctx, &body) {
+        Ok((_, found, install, plan)) => {
+            out(crate::edition::patch(&found, &install, body.coop, &plan))
+        }
+        Err(error) => out::<()>(Err(error)),
+    }
+}
+
+async fn edition_run(State(ctx): State<Ctx>, Json(body): Json<EditionBody>) -> Response {
+    match plan_edition(&ctx, &body) {
+        Ok((_, found, install, plan)) => {
+            let mut system = sysinfo::System::new();
+            system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+            if crate::launch::is_game_running(body.game, &system) {
+                return out::<()>(Err(crate::error::Error::msg(
+                    "the game is already running; close it first",
+                )));
+            }
+            // Patch first: co-op silently not loading is the failure this
+            // avoids, and copying a DLL that is already there costs nothing.
+            if let Err(error) = crate::edition::patch(&found, &install, body.coop, &plan) {
+                return out::<()>(Err(error));
+            }
+            match crate::launch::spawn(&plan) {
+                Ok(pid) => Json(json!({ "pid": pid, "route": plan.route })).into_response(),
+                Err(error) => out::<()>(Err(error)),
+            }
+        }
+        Err(error) => out::<()>(Err(error)),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EditionInstallBody {
+    game: crate::games::Game,
+    edition: String,
+    archive: PathBuf,
+    destination: Option<PathBuf>,
+}
+
+/// Starts unpacking an archive on a background thread.
+async fn edition_install(State(ctx): State<Ctx>, Json(body): Json<EditionInstallBody>) -> Response {
+    let Some(spec) = crate::edition::spec(&body.edition) else {
+        return out::<()>(Err(crate::error::Error::msg("no such edition")));
+    };
+    if ctx.app.edition_job.lock().running {
+        return out::<()>(Err(crate::error::Error::msg(
+            "an edition is already being installed",
+        )));
+    }
+    if !body.archive.is_file() {
+        return out::<()>(Err(crate::error::Error::msg(format!(
+            "{} does not exist",
+            body.archive.display()
+        ))));
+    }
+
+    let destination = match body.destination.clone() {
+        Some(path) => path,
+        None => match ctx.app.active_install(body.game) {
+            Ok(install) => crate::edition::default_destination(&install, spec)
+                .parent()
+                .map(std::path::Path::to_path_buf)
+                .unwrap_or_default(),
+            Err(error) => return out::<()>(Err(error)),
+        },
+    };
+
+    // Refuse before writing anything rather than half way through.
+    let needed = match crate::edition::unpacked_size(&body.archive) {
+        Ok(size) => size,
+        Err(error) => return out::<()>(Err(error)),
+    };
+    if let Some(free) = crate::edition::free_space(&destination) {
+        // A little headroom: the volume should not end up completely full.
+        if free < needed + (1 << 30) {
+            return out::<()>(Err(crate::error::Error::msg(format!(
+                "{} needs {:.1} GB unpacked and {} has {:.1} GB free",
+                spec.name,
+                needed as f64 / 1e9,
+                destination.display(),
+                free as f64 / 1e9
+            ))));
+        }
+    }
+
+    {
+        let mut job = ctx.app.edition_job.lock();
+        *job = crate::edition::EditionJob {
+            edition: spec.id.to_string(),
+            running: true,
+            message: format!("Unpacking {}", spec.name),
+            bytes_total: needed,
+            ..Default::default()
+        };
+    }
+
+    let app = Arc::clone(&ctx.app);
+    let archive = body.archive.clone();
+    let id = spec.id.to_string();
+    let target = destination.clone();
+    let game = body.game;
+
+    std::thread::spawn(move || {
+        let outcome = crate::edition::extract_archive(
+            &archive,
+            &target,
+            |files_done, files_total, bytes_done, bytes_total| {
+                let mut job = app.edition_job.lock();
+                job.files_done = files_done;
+                job.files_total = files_total;
+                job.bytes_done = bytes_done;
+                job.bytes_total = bytes_total;
+            },
+        );
+
+        let mut job = app.edition_job.lock();
+        job.running = false;
+        job.done = true;
+        match outcome {
+            Ok(root) => {
+                // Remember where it landed so the next scan does not have to
+                // guess, and so a folder outside the search path still works.
+                {
+                    let mut settings = app.settings.lock();
+                    settings.editions.insert(id.clone(), root.clone());
+                }
+                let _ = app.settings.lock().clone().save(&app.app_data);
+
+                // Wire it up straight away. Unpacking and then telling somebody
+                // to press Patch is two steps where one will do, and the second
+                // one is the step people skip before wondering why co-op is not
+                // loading.
+                let wired = crate::edition::spec(&id).and_then(|spec| {
+                    let found = crate::edition::probe(spec, &root)?;
+                    let install = app.active_install(game).ok()?;
+                    let plan = crate::edition::plan(spec, &found, &install, true, false).ok()?;
+                    crate::edition::patch(&found, &install, true, &plan).ok()
+                });
+
+                job.message = match wired {
+                    Some(report) if !report.written.is_empty() => {
+                        format!("Installed and set up ({} file(s) written)", report.written.len())
+                    }
+                    _ => format!("Unpacked to {}", root.display()),
+                };
+                job.destination = Some(root);
+            }
+            Err(error) => {
+                job.message = "Unpacking failed".into();
+                job.error = Some(error.to_string());
+            }
+        }
+    });
+
+    Json(json!({ "started": true })).into_response()
+}
+
+async fn edition_job(State(ctx): State<Ctx>) -> Response {
+    Json(ctx.app.edition_job.lock().clone()).into_response()
 }
 
 async fn launch_plan(State(ctx): State<Ctx>, Query(q): Query<GameProfileQ>) -> Response {

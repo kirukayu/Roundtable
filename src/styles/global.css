@@ -443,6 +443,9 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; font
   letter-spacing: 0.05em;
   white-space: nowrap;
   cursor: pointer;
+  /* Some of these are anchors — the wiki link is a real link, because the page
+     is already in a browser. Without this they arrive underlined. */
+  text-decoration: none;
   transition: border-color var(--mid) var(--ease), color var(--mid) var(--ease),
     background var(--mid) var(--ease), transform var(--fast) var(--ease);
 }
@@ -808,10 +811,12 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; font
 .detail { min-height: 100vh; animation: fade var(--slow) var(--out) both; }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
+/* Shorter than it was. At 62vh the art above the title was a third of the
+   screen with nothing in it, and the tabs started below the fold. */
 .detail__banner {
   position: relative;
-  height: 62vh;
-  min-height: 460px;
+  height: 42vh;
+  min-height: 360px;
   display: flex;
   align-items: flex-end;
   overflow: hidden;
@@ -832,25 +837,58 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; font
   to   { transform: scale(1.12) translate(-1%, -1.4%); }
 }
 
+/*
+ * The art has to stop being art and become the page, without a line where that
+ * happens. Two ramps do it: a long vertical one that reaches solid background
+ * well before the bottom edge, and a horizontal one that clears the left third
+ * so the title never sits on detail.
+ */
 .detail__veil {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(0deg, var(--b0) 2%, rgba(5,5,5,0.78) 34%, transparent 78%),
-    linear-gradient(90deg, rgba(5,5,5,0.86) 0%, rgba(5,5,5,0.3) 46%, transparent 78%);
+    linear-gradient(0deg,
+      var(--b0) 0%,
+      var(--b0) 14%,
+      rgba(5,5,5,0.94) 28%,
+      rgba(5,5,5,0.72) 46%,
+      rgba(5,5,5,0.42) 64%,
+      rgba(5,5,5,0.18) 82%,
+      rgba(5,5,5,0.06) 100%),
+    linear-gradient(90deg,
+      rgba(5,5,5,0.92) 0%,
+      rgba(5,5,5,0.66) 28%,
+      rgba(5,5,5,0.24) 54%,
+      rgba(5,5,5,0) 80%);
+}
+
+/* And the last few pixels bleed past the banner onto whatever follows, so the
+   seam between the two sections is not a straight edge. */
+.detail__banner::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: -80px;
+  height: 80px;
+  background: linear-gradient(180deg, var(--b0), var(--b0));
+  pointer-events: none;
 }
 
 .detail__body {
   position: relative;
   width: 100%;
-  padding: var(--s7);
+  padding: var(--s7) var(--s7) var(--s6);
+  /* Clears the back button floating above. */
+  padding-top: var(--s8);
   max-width: 1440px;
   margin: 0 auto;
 }
 
+/* The switch leads the body, so the title sits under it. */
+.detail__body .swap { margin-bottom: var(--s3); }
+
 .detail__back {
   position: absolute;
-  top: calc(var(--s7) + var(--s5));
+  top: var(--s5);
   left: var(--s7);
   z-index: 5;
 }
@@ -878,17 +916,543 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; font
 .detail__act { margin-top: var(--s6); animation: rise var(--slow) var(--out) 440ms both; }
 
 /* ══════════════════════════════════════════════════════════════════ */
+/* Edition switch                                                     */
+/* ══════════════════════════════════════════════════════════════════ */
+
+/*
+ * Two covers, one lit. A total conversion changes what Play does, so the choice
+ * gets the weight of a decision rather than a checkbox in a mod list.
+ */
+/*
+ * Switching edition. Words rather than artwork, but a button rather than a
+ * caption — the first version was grey text at the top of a dark banner and
+ * read as a label nobody thought to click.
+ */
+/*
+ * Pinned to the left edge of the banner, level with the title. Not above the
+ * title, where it crowds the name of the thing it is talking about.
+ */
+.swap {
+  position: absolute;
+  left: var(--s5);
+  top: 46%;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s2);
+}
+
+/* Once the content column reaches the left edge there is no margin left to sit
+   in, so it rejoins the flow above the title. */
+@media (max-width: 1240px) {
+  .swap {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-bottom: var(--s4);
+  }
+}
+
+.swap__go {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s3);
+  height: 34px;
+  padding: 0 var(--s4);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-full);
+  color: var(--w1);
+  font: inherit;
+  font-size: var(--t-xs);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--mid) var(--ease), border-color var(--mid) var(--ease),
+    color var(--mid) var(--ease);
+}
+.swap__go:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--w3);
+  color: var(--w0);
+}
+.swap__go svg { color: var(--w2); transition: color var(--mid) var(--ease); }
+.swap__go:hover svg { color: var(--w0); }
+
+.swap__note {
+  font-size: var(--t-2xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--w4);
+}
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Codex                                                              */
+/* ══════════════════════════════════════════════════════════════════ */
+
+.codex__bar { display: flex; align-items: center; gap: var(--s4); }
+.codex__search { height: 48px; font-size: var(--t-md); }
+.codex__count { white-space: nowrap; font-size: var(--t-2xs); }
+
+.codex__kinds { display: flex; flex-wrap: wrap; gap: var(--s2); }
+
+.codex__filter {
+  height: 28px;
+  padding: 0 var(--s4);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--r-full);
+  color: var(--w4);
+  font: inherit;
+  font-size: var(--t-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--fast) var(--ease), border-color var(--fast) var(--ease);
+}
+.codex__filter:hover { color: var(--w2); border-color: var(--line-2); }
+.codex__filter[data-on="true"] { color: var(--b0); background: var(--w0); border-color: var(--w0); }
+
+.codex__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--s2);
+}
+
+.codex__row {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  padding: var(--s3);
+  background: var(--b1);
+  border: 0;
+  border-radius: var(--r-sm);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+  transition: background var(--fast) var(--ease);
+}
+.codex__row:hover { background: var(--b3); }
+
+.codex__thumb {
+  width: 40px; height: 40px;
+  flex-shrink: 0;
+  display: grid; place-items: center;
+  background: var(--b0);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+.codex__thumb img { width: 100%; height: 100%; object-fit: contain; }
+
+.codex__body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.codex__name {
+  display: block;
+  font-size: var(--t-sm);
+  color: var(--w1);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.codex__kind {
+  display: block;
+  font-size: var(--t-2xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--w4);
+}
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Checks                                                             */
+/* ══════════════════════════════════════════════════════════════════ */
+
+.hc { display: flex; flex-direction: column; }
+
+.hc__row {
+  display: flex;
+  gap: var(--s4);
+  padding: var(--s4) 0;
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+.hc__row:last-child { border-bottom: 0; }
+.hc__row svg { flex-shrink: 0; margin-top: 2px; color: var(--w4); }
+.hc__row[data-level="blocker"] svg { color: var(--bad); }
+.hc__row[data-level="warning"] svg { color: var(--warn); }
+.hc__row[data-level="pass"] svg { color: var(--ok); }
+
+.hc__text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.hc__title { font-size: var(--t-sm); color: var(--w0); }
+.hc__detail { font-size: var(--t-xs); color: var(--w3); line-height: 1.7; }
+
+/* The error text as the game prints it, so somebody who has already seen it
+   recognises their own problem. */
+.hc__symptom {
+  font-family: var(--mono);
+  font-size: var(--t-2xs);
+  color: var(--w4);
+  margin-top: 2px;
+}
+.hc__fix {
+  font-size: var(--t-xs);
+  color: var(--w1);
+  margin-top: 3px;
+}
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Saves                                                              */
+/* ══════════════════════════════════════════════════════════════════ */
+
+/* Characters, not files. The files become a filter row; each character is a
+   card carrying the things you can do to it. */
+.sv__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s4);
+  flex-wrap: wrap;
+}
+.sv__files { display: flex; gap: var(--s2); flex-wrap: wrap; }
+
+.sv__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--s4);
+}
+
+.sv__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  padding: var(--s5);
+  background: var(--b1);
+  border-radius: var(--r);
+  min-width: 0;
+}
+
+.sv__top { display: flex; align-items: center; gap: var(--s4); min-width: 0; }
+
+/* The level is the number people actually identify a character by. */
+.sv__level {
+  flex-shrink: 0;
+  width: 46px; height: 46px;
+  display: grid; place-items: center;
+  border: 1px solid var(--line-2);
+  border-radius: 50%;
+  font-size: var(--t-md);
+  font-weight: 300;
+  color: var(--w0);
+  font-variant-numeric: tabular-nums;
+}
+
+.sv__who { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.sv__name {
+  display: block;
+  font-size: var(--t-md);
+  color: var(--w0);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sv__meta { display: block; font-size: var(--t-xs); color: var(--w4); }
+
+.sv__facts { display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
+.sv__fact {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s4);
+  font-size: var(--t-xs);
+  color: var(--w2);
+  min-width: 0;
+}
+
+.sv__acts {
+  display: flex;
+  gap: var(--s2);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Wiki                                                               */
+/* ══════════════════════════════════════════════════════════════════ */
+
+/* Contents on the left, the article in the middle, its headings on the right. */
+.wk {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr) 200px;
+  gap: var(--s6);
+  align-items: start;
+}
+@media (max-width: 1400px) {
+  .wk { grid-template-columns: 260px minmax(0, 1fr); }
+  .wk__toc { display: none; }
+}
+@media (max-width: 900px) {
+  .wk { grid-template-columns: 1fr; }
+  .wk__list { max-height: 240px; }
+}
+
+.wk__side {
+  position: sticky;
+  top: var(--s5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  min-width: 0;
+}
+
+.wk__find {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  height: 40px;
+  padding: 0 var(--s4);
+  background: var(--b1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-full);
+  color: var(--w4);
+  transition: border-color var(--mid) var(--ease);
+}
+.wk__find:focus-within { border-color: var(--w3); }
+
+/* Every article, scrolling. This is the wiki's table of contents, so it holds
+   thousands of rows and grows as it is scrolled rather than all at once. */
+.wk__list {
+  display: flex;
+  flex-direction: column;
+  max-height: 62vh;
+  overflow-y: auto;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.wk__item {
+  padding: var(--s2) var(--s3);
+  background: none;
+  border: 0;
+  color: var(--w2);
+  font: inherit;
+  font-size: var(--t-xs);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color var(--fast) var(--ease), background var(--fast) var(--ease);
+}
+.wk__item:hover { color: var(--w1); background: rgba(255,255,255,0.03); }
+.wk__item[data-on="true"] { color: var(--w0); background: rgba(255,255,255,0.07); }
+
+.wk__input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  background: none;
+  border: 0;
+  color: var(--w1);
+  font-size: var(--t-sm);
+  user-select: text;
+}
+.wk__input:focus { outline: none; }
+.wk__input::placeholder { color: var(--w4); }
+
+.wk__clear {
+  display: grid; place-items: center;
+  width: 22px; height: 22px;
+  background: none; border: 0; border-radius: 50%;
+  color: var(--w4); cursor: pointer;
+}
+.wk__clear:hover { color: var(--w1); background: rgba(255,255,255,0.06); }
+
+.wk__sources { display: flex; gap: var(--s2); flex-wrap: wrap; }
+
+.wk__stage { min-width: 0; }
+.wk__loading { display: grid; place-items: center; min-height: 300px; }
+.wk__article { min-width: 0; }
+
+.wk__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s4);
+  margin-bottom: var(--s5);
+  padding-bottom: var(--s4);
+  border-bottom: 1px solid var(--line);
+}
+.wk__h {
+  font-size: var(--t-2xl);
+  font-weight: 200;
+  letter-spacing: -0.03em;
+  color: var(--w0);
+  line-height: 1.15;
+}
+
+.wk__toc {
+  position: sticky;
+  top: var(--s5);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 70vh;
+  overflow-y: auto;
+  border-left: 1px solid var(--line);
+  padding-left: var(--s4);
+  min-width: 0;
+}
+.wk__toc-item {
+  background: none; border: 0;
+  padding: 5px 0;
+  color: var(--w4);
+  font: inherit;
+  font-size: var(--t-xs);
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--fast) var(--ease);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wk__toc-item[data-level="3"] { padding-left: var(--s3); font-size: var(--t-2xs); }
+.wk__toc-item:hover { color: var(--w1); }
+.wk__toc-item[data-on="true"] { color: var(--w0); }
+
+/*
+ * The article, in our type rather than the wiki's. Everything below re-styles
+ * MediaWiki's own markup: it arrives with its classes intact and none of its
+ * stylesheet, so without this it renders as unstyled HTML from 2003.
+ */
+.wiki__body {
+  font-size: var(--t-sm);
+  line-height: 1.85;
+  color: var(--w2);
+  overflow-wrap: anywhere;
+}
+.wiki__body h1, .wiki__body h2, .wiki__body h3, .wiki__body h4 {
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  color: var(--w0);
+  margin: var(--s6) 0 var(--s3);
+  padding-bottom: var(--s2);
+  border-bottom: 1px solid var(--line);
+}
+.wiki__body h1 { font-size: var(--t-lg); }
+.wiki__body h2 { font-size: var(--t-md); }
+.wiki__body h3, .wiki__body h4 { font-size: var(--t-sm); border-bottom: 0; }
+.wiki__body p { margin: var(--s3) 0; }
+.wiki__body ul, .wiki__body ol { margin: var(--s3) 0; padding-left: var(--s5); }
+.wiki__body li { margin: 4px 0; }
+.wiki__body a { color: var(--w1); text-decoration: none; border-bottom: 1px solid var(--line-2); }
+.wiki__body a:hover { color: var(--w0); border-bottom-color: var(--w3); }
+.wiki__body img { max-width: 100%; height: auto; border-radius: var(--r-sm); }
+/* A real table. `display: block` here made every cell stack into a column —
+   the wiki's own layout tables are how half its pages are arranged. */
+.wiki__body table {
+  max-width: 100%;
+  border-collapse: collapse;
+  margin: var(--s4) 0;
+  font-size: var(--t-xs);
+}
+/* Layout tables carry no borders on the wiki, so they should not gain any. */
+.wiki__body table:not([class]) th,
+.wiki__body table:not([class]) td { border: 0; }
+.wiki__body th, .wiki__body td {
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+.wiki__body th { color: var(--w1); font-weight: 400; background: rgba(255,255,255,0.02); }
+.wiki__body pre, .wiki__body code {
+  font-family: var(--mono);
+  font-size: var(--t-xs);
+  background: var(--b1);
+  border-radius: var(--r-sm);
+  padding: 2px 5px;
+}
+.wiki__body pre { padding: var(--s4); overflow-x: auto; }
+.wiki__body blockquote {
+  margin: var(--s4) 0;
+  padding-left: var(--s4);
+  border-left: 1px solid var(--line-2);
+  color: var(--w3);
+}
+.wiki__body hr { border: 0; border-top: 1px solid var(--line); margin: var(--s5) 0; }
+/* Infoboxes and float-right thumbnails wreck a narrow column. */
+.wiki__body .infobox, .wiki__body .thumb, .wiki__body figure {
+  float: none !important;
+  width: auto !important;
+  max-width: 100%;
+  margin: var(--s4) 0;
+}
+
+/*
+ * Only the wiki's own navigation goes. `.navbox` used to be in this list, and
+ * on Fandom that class appears on nearly two hundred elements including ones
+ * wrapping real article text — hiding it took half the page with it.
+ */
+.wiki__body .toc, .wiki__body .mw-jump-link, .wiki__body .noprint { display: none; }
+
+/*
+ * Tabbed sections, shown as sections.
+ *
+ * Fandom puts a lot of an article behind tabs that JavaScript switches between.
+ * There is no JavaScript here, so instead of one panel and a row of dead labels,
+ * every panel is laid out in sequence with its label as a heading.
+ */
+.wiki__body .wds-tabs__wrapper { display: none; }
+.wiki__body .wds-tab__content {
+  display: block !important;
+  margin: var(--s4) 0;
+  padding-left: var(--s4);
+  border-left: 1px solid var(--line);
+}
+
+/* Collapsed boxes, opened. */
+.wiki__body .mw-collapsible-content,
+.wiki__body .mw-collapsed > *,
+.wiki__body .collapsible-content { display: block !important; }
+.wiki__body .mw-collapsible-toggle { display: none; }
+
+/* Infobox tables read as key/value rows rather than a squeezed grid. */
+.wiki__body .pi-data {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s4);
+  padding: var(--s2) 0;
+  border-bottom: 1px solid var(--line);
+}
+.wiki__body .pi-data-label { color: var(--w4); flex-shrink: 0; }
+.wiki__body .pi-data-value { text-align: right; }
+.wiki__body .pi-image { text-align: center; }
+.wiki__body .portable-infobox {
+  background: var(--b1);
+  border-radius: var(--r);
+  padding: var(--s4);
+  margin: var(--s4) 0;
+}
+.wiki__body .pi-title, .wiki__body .pi-header {
+  display: block;
+  font-size: var(--t-sm);
+  color: var(--w1);
+  margin: var(--s3) 0 var(--s2);
+}
+
+/* ══════════════════════════════════════════════════════════════════ */
 /* Tabs                                                               */
 /* ══════════════════════════════════════════════════════════════════ */
 
 .tabs {
   display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
   gap: var(--s6);
   padding: 0 var(--s7);
   max-width: 1440px;
   margin: 0 auto;
   border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
 }
+
+.tabs__list { display: flex; gap: var(--s6); }
 
 .tab {
   position: relative;
@@ -1007,9 +1571,11 @@ textarea.in { height: auto; min-height: 92px; padding: var(--s3) var(--s4); resi
 
 .opt { display: flex; align-items: center; gap: var(--s5); padding: var(--s4) 0; border-bottom: 1px solid var(--line); }
 .opt:last-child { border-bottom: 0; }
-.opt__t { flex: 1; min-width: 0; }
-.opt__l { font-size: var(--t-sm); font-weight: 400; color: var(--w1); }
-.opt__h { font-size: var(--t-xs); font-weight: 300; color: var(--w4); line-height: 1.65; margin-top: 3px; }
+/* These three are spans in some panes, so they have to be told to stack;
+   inline they run the description into the end of the label. */
+.opt__t { display: block; flex: 1; min-width: 0; }
+.opt__l { display: block; font-size: var(--t-sm); font-weight: 400; color: var(--w1); }
+.opt__h { display: block; font-size: var(--t-xs); font-weight: 300; color: var(--w4); line-height: 1.65; margin-top: 3px; }
 
 .rng { width: 100%; appearance: none; height: 1px; background: var(--line-2); cursor: pointer; }
 .rng::-webkit-slider-thumb { appearance: none; width: 12px; height: 12px; border-radius: 50%; background: var(--w1); cursor: grab; }

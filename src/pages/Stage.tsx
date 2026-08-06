@@ -1,20 +1,33 @@
 import { motion } from "motion/react";
 import { useCallback, useEffect, useState } from "react";
 
+import { EditionSwitch } from "../components/EditionSwitch";
 import { Icon } from "../components/Icons";
+import { HealthCard } from "../components/HealthCard";
+import { MatchCard } from "../components/MatchCard";
 import { EASE } from "../components/Motion";
 import { Blank, Card, Chip, Skeleton, useToast } from "../components/ui";
 import { api } from "../lib/ipc";
 import { useApp } from "../lib/store";
-import type { EacStatus, GameInfo, Installation, LoaderInstall, PreparedLaunch } from "../lib/types";
+import type {
+  EacStatus,
+  EditionStatus,
+  GameInfo,
+  Installation,
+  LoaderInstall,
+  PreparedLaunch,
+} from "../lib/types";
 
+import CodexPane from "./panes/CodexPane";
+import WikiPane from "./panes/WikiPane";
+import EditionPane from "./panes/EditionPane";
 import PlayPane from "./panes/PlayPane";
 import ModsPane from "./panes/ModsPane";
 import SavesPane from "./panes/SavesPane";
 import CoopPane from "./panes/CoopPane";
 import SystemPane from "./panes/SystemPane";
 
-type Pane = "play" | "mods" | "saves" | "coop" | "system";
+type Pane = "play" | "mods" | "saves" | "coop" | "codex" | "wiki" | "system";
 
 /**
  * One game, in full.
@@ -37,10 +50,22 @@ export default function Stage({ game, onBack }: { game: GameInfo; onBack: () => 
   const [modCount, setModCount] = useState(0);
   const [busy, setBusy] = useState(false);
 
+  // Which edition of this game is on screen. Null is the game itself.
+  const [edition, setEdition] = useState<string | null>(null);
+  const [editions, setEditions] = useState<EditionStatus[]>([]);
+  const [editionCoop, setEditionCoop] = useState(true);
+
   const gameProfiles = profiles.filter((p) => p.game === game.id);
   const active =
     gameProfiles.find((p) => p.id === settings.activeProfile) ?? gameProfiles[0] ?? null;
   const running = gameRunning === game.id;
+
+  const openEdition = editions.find((e) => e.spec.id === edition) ?? null;
+
+  const loadEditions = useCallback(async () => {
+    const list = await api.editions(game.id, editionCoop).catch(() => []);
+    setEditions(list);
+  }, [game.id, editionCoop]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -60,6 +85,16 @@ export default function Stage({ game, onBack }: { game: GameInfo; onBack: () => 
     } finally {
       setLoading(false);
     }
+  }, [game.id]);
+
+  useEffect(() => {
+    void loadEditions();
+  }, [loadEditions]);
+
+  // Leaving for another game drops back to the base edition, so the page never
+  // opens on a conversion that belongs to a title you are no longer looking at.
+  useEffect(() => {
+    setEdition(null);
   }, [game.id]);
 
   useEffect(() => {
@@ -133,24 +168,38 @@ export default function Stage({ game, onBack }: { game: GameInfo; onBack: () => 
 
   const blocked = prepared?.plan.notices.some((n) => n.severity === "blocker") ?? false;
 
+  // A conversion brings its own mods, so that tab has nothing to say about it.
   const panes: { id: Pane; label: string }[] = [
     { id: "play", label: "Play" },
-    { id: "mods", label: "Mods" },
+    ...(openEdition ? [] : [{ id: "mods" as Pane, label: "Mods" }]),
     { id: "saves", label: "Saves" },
     ...(game.supportsSeamlessCoop ? [{ id: "coop" as Pane, label: "Co-op" }] : []),
+    ...(game.id === "elden-ring"
+      ? [{ id: "codex" as Pane, label: "Codex" }, { id: "wiki" as Pane, label: "Wiki" }]
+      : []),
     { id: "system", label: "System" },
   ];
+
+  // The banner follows the edition: picking The Convergence should look like
+  // opening it, not like reading about it on the ELDEN RING page.
+  const bannerArt = openEdition
+    ? `/editions/${openEdition.spec.id}-hero.jpg`
+    : game.heroUrl;
 
   return (
     <div className="detail">
       <section className="detail__banner">
-        {game.heroUrl && (
+        {bannerArt && (
           // Shares its identity with the cover on the shelf, so arriving here
           // is the poster expanding rather than a new page appearing.
           <motion.div
-            layoutId={`art-${game.id}`}
+            layoutId={openEdition ? undefined : `art-${game.id}`}
+            key={bannerArt}
             className="detail__art"
-            style={{ backgroundImage: `url(${game.heroUrl})` }}
+            style={{ backgroundImage: `url(${bannerArt})` }}
+            initial={openEdition ? { opacity: 0 } : false}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.9, ease: EASE }}
           />
         )}
         <div className="detail__veil" />
@@ -160,13 +209,26 @@ export default function Stage({ game, onBack }: { game: GameInfo; onBack: () => 
           Catalogue
         </button>
 
+        {/* In the left margin, clear of the title. */}
+        {install && editions.length > 0 && (
+          <EditionSwitch
+            game={game}
+            editions={editions}
+            active={edition}
+            onSelect={(id) => {
+              setEdition(id);
+              setPane("play");
+            }}
+          />
+        )}
+
         <motion.div
           className="detail__body"
           initial={{ opacity: 0, y: 26, filter: "blur(8px)" }}
           animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
           transition={{ duration: 1.1, ease: EASE, delay: 0.34 }}
         >
-          <h1 className="detail__title">{game.name}</h1>
+          <h1 className="detail__title">{openEdition?.spec.name ?? game.name}</h1>
 
           <div className="detail__facts">
             <span className="fact">
@@ -219,6 +281,14 @@ export default function Stage({ game, onBack }: { game: GameInfo; onBack: () => 
                   Locate manually
                 </button>
               </>
+            ) : openEdition ? (
+              <button
+                type="button"
+                className="btn btn--solid btn--lg"
+                onClick={() => setPane("play")}
+              >
+                {openEdition.install ? `Open ${openEdition.spec.short}` : "Install it"}
+              </button>
             ) : !active ? (
               <button type="button" className="btn btn--solid btn--lg" onClick={createProfile}>
                 Create a profile
@@ -234,23 +304,29 @@ export default function Stage({ game, onBack }: { game: GameInfo; onBack: () => 
                   {busy ? <span className="spin" /> : null}
                   {running ? "Running" : busy ? "Starting" : "Play"}
                 </button>
-                {gameProfiles.length > 1 && (
-                  <select
-                    className="sel2"
-                    style={{ width: 220, height: 56, borderRadius: "var(--r-full)" }}
-                    value={active.id}
-                    aria-label="Profile"
-                    onChange={(event) =>
-                      void patchSettings({ activeProfile: event.target.value })
-                    }
-                  >
-                    {gameProfiles.map((profile) => (
-                      <option key={profile.id} value={profile.id}>
-                        {profile.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
+
+                {/*
+                  Always visible, even with a single profile. Hiding the picker
+                  until a second one exists means creating the first appears to
+                  do nothing at all.
+                */}
+                <select
+                  className="sel2"
+                  style={{ width: 210, height: 56, borderRadius: "var(--r-full)" }}
+                  value={active.id}
+                  aria-label="Profile"
+                  onChange={(event) => {
+                    if (event.target.value === "+") void createProfile();
+                    else void patchSettings({ activeProfile: event.target.value });
+                  }}
+                >
+                  {gameProfiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.name}
+                    </option>
+                  ))}
+                  <option value="+">New profile…</option>
+                </select>
               </>
             )}
 
@@ -260,24 +336,28 @@ export default function Stage({ game, onBack }: { game: GameInfo; onBack: () => 
               <Chip key={l.executable}>{l.kind === "me3" ? "me3" : "ModEngine 2"}</Chip>
             ))}
           </div>
+
         </motion.div>
       </section>
 
       {install && (
         <div className="tabs">
-          {panes.map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              role="tab"
-              className="tab"
-              aria-selected={pane === entry.id}
-              onClick={() => setPane(entry.id)}
-            >
-              {entry.label}
-              {entry.id === "mods" && modCount > 0 ? ` (${modCount})` : ""}
-            </button>
-          ))}
+          <div className="tabs__list">
+            {panes.map((entry) => (
+              <button
+                key={entry.id}
+                type="button"
+                role="tab"
+                className="tab"
+                aria-selected={pane === entry.id}
+                onClick={() => setPane(entry.id)}
+              >
+                {entry.label}
+                {entry.id === "mods" && modCount > 0 ? ` (${modCount})` : ""}
+              </button>
+            ))}
+          </div>
+
         </div>
       )}
 
@@ -315,7 +395,18 @@ export default function Stage({ game, onBack }: { game: GameInfo; onBack: () => 
           </Card>
         ) : (
           <>
-            {pane === "play" && (
+            {pane === "play" && openEdition && (
+              <EditionPane
+                game={game.id}
+                install={install}
+                status={openEdition}
+                coop={editionCoop}
+                onCoop={setEditionCoop}
+                onChanged={loadEditions}
+              />
+            )}
+
+            {pane === "play" && !openEdition && (
               <PlayPane
                 game={game}
                 install={install}
@@ -344,7 +435,15 @@ export default function Stage({ game, onBack }: { game: GameInfo; onBack: () => 
               />
             )}
             {pane === "saves" && <SavesPane gameId={game.id} />}
-            {pane === "coop" && <CoopPane gameId={game.id} install={install} />}
+            {pane === "coop" && (
+              <div className="col">
+                <HealthCard game={game.id} edition={edition} />
+                <MatchCard game={game.id} edition={edition} />
+                <CoopPane gameId={game.id} install={install} />
+              </div>
+            )}
+            {pane === "codex" && <CodexPane edition={edition} />}
+            {pane === "wiki" && <WikiPane edition={edition} />}
             {pane === "system" && (
               <SystemPane
                 gameId={game.id}

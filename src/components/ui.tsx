@@ -106,7 +106,7 @@ export function Chip({
   children,
   dark,
 }: {
-  tone?: "a" | "ok" | "warn" | "bad";
+  tone?: "solid" | "ok" | "warn" | "bad";
   children: ReactNode;
   dark?: boolean;
 }) {
@@ -220,7 +220,7 @@ export function Modal({
           <h2>{title}</h2>
           <button
             type="button"
-            className="btn btn--g btn--i btn--s"
+            className="btn btn--ghost btn--icon btn--sm"
             onClick={onClose}
             aria-label="Close"
           >
@@ -255,12 +255,12 @@ export function Confirm({
       onClose={onCancel}
       footer={
         <>
-          <button type="button" className="btn btn--g" onClick={onCancel}>
+          <button type="button" className="btn btn--ghost" onClick={onCancel}>
             Cancel
           </button>
           <button
             type="button"
-            className={`btn ${destructive ? "btn--bad" : "btn--a"}`}
+            className={`btn ${destructive ? "btn--bad" : "btn--solid"}`}
             onClick={onConfirm}
           >
             {confirmLabel}
@@ -409,7 +409,7 @@ export function CopyButton({ text }: { text: string }) {
   return (
     <button
       type="button"
-      className="btn btn--g btn--s btn--i"
+      className="btn btn--ghost btn--sm btn--icon"
       aria-label="Copy"
       onClick={async () => {
         try {

@@ -123,7 +123,7 @@ export default function CoopPane({
         </div>
         <button
           type="button"
-          className="btn btn--a btn--s"
+          className="btn btn--solid btn--sm"
           onClick={save}
           disabled={!dirty || saving}
         >
@@ -159,7 +159,7 @@ export default function CoopPane({
               />
               <button
                 type="button"
-                className="btn btn--i"
+                className="btn btn--icon"
                 aria-label="Generate"
                 onClick={async () => set("PASSWORD.cooppassword", await api.coopGeneratePassword())}
               >
@@ -198,7 +198,7 @@ export default function CoopPane({
                 <button
                   key={preset.name}
                   type="button"
-                  className="btn btn--g btn--s"
+                  className="btn btn--ghost btn--sm"
                   onClick={() => setDraft((current) => ({ ...current, ...preset.values }))}
                 >
                   {preset.name}

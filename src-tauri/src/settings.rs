@@ -35,6 +35,11 @@ pub struct Settings {
     pub torrent_port: u16,
     pub use_doh: bool,
     pub first_run_complete: bool,
+    /// Where each total conversion lives, keyed by edition id. Set when the user
+    /// points at a folder or when Roundtable unpacks one, so neither has to be
+    /// rediscovered by scanning.
+    #[serde(default)]
+    pub editions: std::collections::BTreeMap<String, PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,6 +74,7 @@ impl Default for Settings {
             torrent_port: 6881,
             use_doh: true,
             first_run_complete: false,
+            editions: std::collections::BTreeMap::new(),
         }
     }
 }
