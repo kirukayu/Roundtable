@@ -65,18 +65,18 @@ pub struct Installation {
 }
 
 impl Installation {
-    /// Builds an `Installation` from a folder that may be either the install root
-    /// or the inner `Game` folder, since users pick both.
+    /// Builds an `Installation` from any folder at or near the game.
     pub fn probe(game: Game, folder: &Path) -> Result<Installation> {
         let (root, game_dir) = resolve_layout(game, folder).ok_or_else(|| {
             Error::msg(format!(
-                "{} was not found under {}",
-                game.executable(),
-                folder.display()
+                "No {} install under {}. Looked for {} and for the game's data files.",
+                game.display_name(),
+                folder.display(),
+                game.executable()
             ))
         })?;
 
-        let executable = game_dir.join(game.executable());
+        let executable = executable_in(game, &game_dir);
         let markers: Vec<String> = EMULATOR_MARKERS
             .iter()
             .filter(|marker| game_dir.join(marker).exists())
@@ -121,31 +121,149 @@ impl Installation {
     }
 }
 
-/// Accepts either `<root>` or `<root>/Game` and returns both.
+/// Works out where the game actually is, given any folder near it.
+///
+/// People point at whatever they recognise: the repack's outer folder, a
+/// launcher directory two levels above the game, the `Game` folder itself, or
+/// something inside it. Repacks nest arbitrarily —
+/// `ELDEN RING (2013)\ELDEN RING (2022)\Elden Ring\Game` is a real example — so
+/// checking one fixed layout rejects installs that are plainly there.
+///
+/// The search goes down first, taking the shallowest match, then up through the
+/// ancestors. Both are bounded, and only the picked subtree is walked, so this
+/// never wanders off across the disk.
 fn resolve_layout(game: Game, folder: &Path) -> Option<(PathBuf, PathBuf)> {
     let exe = game.executable();
 
-    // Given the install root.
+    // The two common shapes, checked directly so the usual case costs nothing.
+    if folder.join(exe).is_file() {
+        return Some((parent_or_self(folder), folder.to_path_buf()));
+    }
     let nested = folder.join("Game");
     if nested.join(exe).is_file() {
         return Some((folder.to_path_buf(), nested));
     }
 
-    // Given the folder holding the executable.
-    if folder.join(exe).is_file() {
-        let root = folder
-            .parent()
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| folder.to_path_buf());
-        return Some((root, folder.to_path_buf()));
+    // Downward, shallowest first: the outer folder of a nested repack.
+    let mut candidates = deep_scan(game, folder, 5);
+    if !candidates.is_empty() {
+        candidates.sort_by_key(|path| path.components().count());
+        let game_dir = candidates.remove(0);
+        return Some((parent_or_self(&game_dir), game_dir));
     }
 
-    // Some repacks flatten the layout entirely.
-    if folder.join(exe).is_file() {
-        return Some((folder.to_path_buf(), folder.to_path_buf()));
+    // Upward: they picked something inside the game, like SeamlessCoop or mod.
+    let mut level = folder;
+    for _ in 0..4 {
+        let Some(parent) = level.parent() else { break };
+        if parent.join(exe).is_file() {
+            return Some((parent_or_self(parent), parent.to_path_buf()));
+        }
+        let sibling = parent.join("Game");
+        if sibling.join(exe).is_file() {
+            return Some((parent.to_path_buf(), sibling));
+        }
+        level = parent;
+    }
+
+    // Last resort: find the game by its data files rather than its executable.
+    // A repack can rename or repackage the launcher, but the archives have to
+    // keep their names or the game does not start.
+    let mut by_data = scan_by_signature(game, folder, 5);
+    if !by_data.is_empty() {
+        by_data.sort_by_key(|path| path.components().count());
+        let game_dir = by_data.remove(0);
+        return Some((parent_or_self(&game_dir), game_dir));
     }
 
     None
+}
+
+/// True when a folder holds the game's data archives.
+fn has_signature(game: Game, folder: &Path) -> bool {
+    let signature = game.signature_files();
+    !signature.is_empty() && signature.iter().all(|name| folder.join(name).is_file())
+}
+
+/// Finds folders holding the game's data archives.
+fn scan_by_signature(game: Game, root: &Path, max_depth: usize) -> Vec<PathBuf> {
+    if game.signature_files().is_empty() {
+        return Vec::new();
+    }
+    walkdir::WalkDir::new(root)
+        .max_depth(max_depth)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|entry| !is_noise(entry.file_name().to_string_lossy().as_ref()))
+        .filter_map(std::result::Result::ok)
+        .filter(|entry| entry.file_type().is_dir())
+        .map(|entry| entry.path().to_path_buf())
+        .filter(|path| has_signature(game, path))
+        .collect()
+}
+
+/// Folders never worth walking into.
+fn is_noise(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "windows"
+            | "$recycle.bin"
+            | "system volume information"
+            | "appdata"
+            | "programdata"
+            | "node_modules"
+            | ".git"
+    )
+}
+
+/// The executable to launch from a known game folder.
+///
+/// Normally the one the game ships under its own name. When a repack has
+/// renamed it, the largest executable that is not a known helper is the game:
+/// ELDEN RING's is around 80 MB and everything else in the folder is under ten.
+pub fn executable_in(game: Game, game_dir: &Path) -> PathBuf {
+    let named = game_dir.join(game.executable());
+    if named.is_file() {
+        return named;
+    }
+
+    let helpers = game.helper_executables();
+    let mut best: Option<(u64, PathBuf)> = None;
+
+    if let Ok(entries) = std::fs::read_dir(game_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+            if !name.ends_with(".exe") || helpers.contains(&name.as_str()) {
+                continue;
+            }
+            let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+            // A game executable is tens of megabytes. Anything smaller is a
+            // helper this list happens not to name.
+            if size < 8 * 1024 * 1024 {
+                continue;
+            }
+            if best.as_ref().is_none_or(|(largest, _)| size > *largest) {
+                best = Some((size, path));
+            }
+        }
+    }
+
+    // Falling back to the expected name keeps the error message honest when
+    // there is genuinely nothing to run.
+    best.map(|(_, path)| path).unwrap_or(named)
+}
+
+/// The parent folder, or the folder itself when it is a drive root.
+fn parent_or_self(folder: &Path) -> PathBuf {
+    folder
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| folder.to_path_buf())
 }
 
 fn classify(root: &Path, game: Game, markers: &[String]) -> InstallKind {
@@ -179,6 +297,12 @@ fn paths_equal(a: &Path, b: &Path) -> bool {
 }
 
 /// Discovers every installation Roundtable can find without asking the user.
+///
+/// Three passes, cheapest first, each only running when the last found nothing:
+/// the Steam registry, then the folder names installers use, then a bounded walk
+/// of every fixed drive. The walk exists because repacks land in folders named
+/// whatever their owner felt like — `pleasedonttakeofmymask` is a real one — and
+/// a list of expected names will never cover that.
 pub fn discover(game: Game) -> Vec<Installation> {
     let mut found: Vec<Installation> = Vec::new();
     let push = |folder: PathBuf, out: &mut Vec<Installation>| {
@@ -197,7 +321,98 @@ pub fn discover(game: Game) -> Vec<Installation> {
         push(candidate, &mut found);
     }
 
+    if found.is_empty() {
+        for candidate in sweep_drives(game, 4, |_| true) {
+            push(candidate, &mut found);
+        }
+    }
+
     found
+}
+
+/// Walks every fixed drive to the end, looking for the game anywhere on it.
+///
+/// The shallow pass covers where installers put things. This covers where
+/// people put things, which is anywhere at all, and is what runs when the
+/// launcher would otherwise have to say it could not find a game the user can
+/// see with their own eyes.
+///
+/// `progress` is called with each folder as it is entered and returns false to
+/// stop, so the interface can show where it is rather than a frozen spinner.
+pub fn deep_discover(game: Game, progress: impl FnMut(&Path) -> bool) -> Vec<Installation> {
+    let mut found: Vec<Installation> = Vec::new();
+    for candidate in sweep_drives(game, usize::MAX, progress) {
+        if let Ok(install) = Installation::probe(game, &candidate) {
+            if !found.iter().any(|i| paths_equal(&i.root, &install.root)) {
+                found.push(install);
+            }
+        }
+    }
+    found
+}
+
+/// Walks every fixed drive looking for the game, by name or by its data files.
+///
+/// Directory names are compared as strings, which is nearly free; the on-disk
+/// check for the game's archives only runs when the name misses. Pruning is
+/// what keeps a full walk survivable — Windows, package caches and the like are
+/// never entered.
+fn sweep_drives(
+    game: Game,
+    max_depth: usize,
+    mut progress: impl FnMut(&Path) -> bool,
+) -> Vec<PathBuf> {
+    let needle = normalise(game.display_name());
+    let short = normalise(game.short_name());
+    let mut hits = Vec::new();
+    let mut seen = 0usize;
+
+    for drive in fixed_drives() {
+        let mut walker = walkdir::WalkDir::new(&drive)
+            .follow_links(false);
+        if max_depth != usize::MAX {
+            walker = walker.max_depth(max_depth);
+        }
+
+        for entry in walker
+            .into_iter()
+            .filter_entry(|entry| {
+                entry.depth() == 0 || !is_noise(entry.file_name().to_string_lossy().as_ref())
+            })
+            .filter_map(std::result::Result::ok)
+            .filter(|entry| entry.file_type().is_dir())
+        {
+            let path = entry.path();
+
+            // Reporting every folder would spend more time locking shared state
+            // than walking; every few hundred is enough to look alive.
+            seen += 1;
+            if seen % 400 == 0 && !progress(path) {
+                return hits;
+            }
+
+            let name = normalise(&entry.file_name().to_string_lossy());
+            if (!needle.is_empty() && name.contains(&needle))
+                || (!short.is_empty() && short.len() > 4 && name.contains(&short))
+                || has_signature(game, path)
+            {
+                hits.push(path.to_path_buf());
+                if hits.len() >= 40 {
+                    return hits;
+                }
+            }
+        }
+    }
+
+    hits
+}
+
+/// Lowercase, letters and digits only, so spacing and punctuation stop mattering.
+fn normalise(text: &str) -> String {
+    text.chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 /// Folders repacks land in often enough to be worth checking without a full scan.
@@ -373,6 +588,181 @@ pub fn folder_size(path: &Path) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn temp(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("roundtable-find-{name}"));
+        std::fs::remove_dir_all(&dir).ok();
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// A game folder as it exists on disk, optionally with the executable
+    /// renamed the way some repacks do.
+    fn lay_out(game_dir: &Path, exe: &str) {
+        std::fs::create_dir_all(game_dir).unwrap();
+        for name in Game::EldenRing.signature_files() {
+            std::fs::write(game_dir.join(name), b"x").unwrap();
+        }
+        // Over the eight megabyte floor that separates a game from a helper.
+        std::fs::write(game_dir.join(exe), vec![0u8; 9 * 1024 * 1024]).unwrap();
+        std::fs::write(game_dir.join("start_protected_game.exe"), vec![0u8; 9 * 1024 * 1024])
+            .unwrap();
+    }
+
+    #[test]
+    fn the_folder_holding_the_executable_is_accepted() {
+        let base = temp("direct");
+        let game_dir = base.join("Game");
+        lay_out(&game_dir, "eldenring.exe");
+
+        let found = Installation::probe(Game::EldenRing, &game_dir).unwrap();
+        assert_eq!(found.game_dir, game_dir);
+        assert_eq!(found.executable, game_dir.join("eldenring.exe"));
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn the_install_root_above_it_is_accepted() {
+        let base = temp("root");
+        let root = base.join("ELDEN RING");
+        lay_out(&root.join("Game"), "eldenring.exe");
+
+        let found = Installation::probe(Game::EldenRing, &root).unwrap();
+        assert_eq!(found.game_dir, root.join("Game"));
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn a_repack_nested_several_levels_deep_is_found() {
+        // The shape that made a user pick the folder by hand and still be told
+        // the game was not there.
+        let base = temp("nested");
+        let deep = base
+            .join("ELDEN RING ( 2013 )")
+            .join("ELDEN RING (2022)")
+            .join("Elden Ring")
+            .join("Game");
+        lay_out(&deep, "eldenring.exe");
+
+        let found = Installation::probe(Game::EldenRing, &base).unwrap();
+        assert_eq!(found.game_dir, deep, "the outer folder must resolve inward");
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn picking_a_folder_inside_the_game_still_resolves() {
+        let base = temp("inside");
+        let game_dir = base.join("Game");
+        lay_out(&game_dir, "eldenring.exe");
+        let inner = game_dir.join("SeamlessCoop");
+        std::fs::create_dir_all(&inner).unwrap();
+
+        let found = Installation::probe(Game::EldenRing, &inner).unwrap();
+        assert_eq!(found.game_dir, game_dir);
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn a_renamed_executable_is_found_by_the_games_data_files() {
+        let base = temp("renamed");
+        let game_dir = base.join("Game");
+        lay_out(&game_dir, "eldenring_launcher_patched.exe");
+        std::fs::remove_file(game_dir.join("start_protected_game.exe")).ok();
+
+        let found = Installation::probe(Game::EldenRing, &base).unwrap();
+        assert_eq!(found.game_dir, game_dir, "the data archives identify the folder");
+        assert_eq!(
+            found.executable.file_name().unwrap(),
+            "eldenring_launcher_patched.exe",
+            "and the largest non-helper executable is the game"
+        );
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn helpers_are_never_mistaken_for_the_game() {
+        let base = temp("helpers");
+        let game_dir = base.join("Game");
+        std::fs::create_dir_all(&game_dir).unwrap();
+        for name in Game::EldenRing.signature_files() {
+            std::fs::write(game_dir.join(name), b"x").unwrap();
+        }
+        // Only helpers, all of them large.
+        for name in ["start_protected_game.exe", "ersc_launcher.exe", "me3.exe"] {
+            std::fs::write(game_dir.join(name), vec![0u8; 20 * 1024 * 1024]).unwrap();
+        }
+        std::fs::write(game_dir.join("game.exe"), vec![0u8; 9 * 1024 * 1024]).unwrap();
+
+        let picked = executable_in(Game::EldenRing, &game_dir);
+        assert_eq!(picked.file_name().unwrap(), "game.exe", "got {picked:?}");
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn small_executables_are_not_candidates() {
+        let base = temp("small");
+        let game_dir = base.join("Game");
+        std::fs::create_dir_all(&game_dir).unwrap();
+        std::fs::write(game_dir.join("readme_tool.exe"), b"tiny").unwrap();
+
+        // Nothing plausible, so it reports the name it expected rather than
+        // pointing the loader at a two kilobyte helper.
+        let picked = executable_in(Game::EldenRing, &game_dir);
+        assert_eq!(picked.file_name().unwrap(), "eldenring.exe");
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn folder_names_are_matched_past_spacing_and_case() {
+        // The forms a repack actually uses.
+        for name in [
+            "ELDEN RING",
+            "Elden Ring",
+            "elden_ring",
+            "ELDEN RING (2022)",
+            "EldenRing.v1.16",
+        ] {
+            assert!(
+                normalise(name).contains(&normalise("ELDEN RING")),
+                "{name} should match"
+            );
+        }
+        assert!(!normalise("Dark Souls III").contains(&normalise("ELDEN RING")));
+    }
+
+    #[test]
+    fn a_folder_holding_the_archives_is_recognised_whatever_it_is_called() {
+        let base = temp("signature");
+        let odd = base.join("pleasedonttakeofmymask").join("g");
+        lay_out(&odd, "eldenring.exe");
+
+        assert!(has_signature(Game::EldenRing, &odd));
+        // And probing the nonsense-named parent still resolves inward.
+        let found = Installation::probe(Game::EldenRing, &base.join("pleasedonttakeofmymask"))
+            .expect("resolved");
+        assert_eq!(found.game_dir, odd);
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn an_unrelated_folder_is_still_rejected() {
+        let base = temp("nothing");
+        std::fs::create_dir_all(base.join("Documents")).unwrap();
+        std::fs::write(base.join("notes.txt"), b"x").unwrap();
+
+        let result = Installation::probe(Game::EldenRing, &base);
+        assert!(result.is_err(), "an empty folder must not resolve to a game");
+
+        std::fs::remove_dir_all(&base).ok();
+    }
 
     #[test]
     fn install_kind_follows_emulator_markers() {

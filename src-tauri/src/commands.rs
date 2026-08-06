@@ -32,6 +32,20 @@ pub struct AppState {
     pub codex: Mutex<Option<Vec<crate::codex::CodexEntry>>>,
     pub codex_job: Mutex<crate::codex::CodexState>,
     pub wiki_job: Mutex<crate::wiki::WikiIndexState>,
+    /// A full-disk search for a game, and where it has got to.
+    pub scan_job: Mutex<ScanState>,
+}
+
+/// Progress of the whole-machine search.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanState {
+    pub running: bool,
+    pub done: bool,
+    /// The folder being looked at, so the wait has something to show.
+    pub at: String,
+    pub found: Vec<Installation>,
+    pub cancelled: bool,
 }
 
 impl AppState {
@@ -54,6 +68,7 @@ impl AppState {
             codex: Mutex::new(None),
             codex_job: Mutex::new(crate::codex::CodexState::default()),
             wiki_job: Mutex::new(crate::wiki::WikiIndexState::default()),
+            scan_job: Mutex::new(ScanState::default()),
         }
     }
 

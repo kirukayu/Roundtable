@@ -74,6 +74,9 @@ pub async fn start(app: Arc<AppState>) -> crate::error::Result<Server> {
         .route("/steam/accounts", get(steam_accounts))
         .route("/installs/discover", get(installs_discover))
         .route("/installs/active", get(installs_active))
+        .route("/installs/scan", post(installs_scan))
+        .route("/installs/scan/state", get(installs_scan_state))
+        .route("/installs/scan/stop", post(installs_scan_stop))
         .route("/installs/remember", post(installs_remember))
         .route("/installs/forget", post(installs_forget))
         .route("/loaders", get(loaders))
@@ -285,6 +288,51 @@ async fn installs_active(State(ctx): State<Ctx>, Query(q): Query<GameQ>) -> Resp
         Some(root) => out(crate::game::Installation::probe(q.game, &root).map(Some)),
         None => Json(None::<crate::game::Installation>).into_response(),
     }
+}
+
+/// Searches the whole machine. Runs on its own thread; the interface polls.
+async fn installs_scan(State(ctx): State<Ctx>, Query(q): Query<GameQ>) -> Response {
+    if ctx.app.scan_job.lock().running {
+        return out::<()>(Err(crate::error::Error::msg("a search is already running")));
+    }
+    {
+        let mut job = ctx.app.scan_job.lock();
+        *job = crate::commands::ScanState {
+            running: true,
+            at: "Starting".into(),
+            ..Default::default()
+        };
+    }
+
+    let app = Arc::clone(&ctx.app);
+    let game = q.game;
+
+    std::thread::spawn(move || {
+        let reporter = Arc::clone(&app);
+        let found = crate::game::deep_discover(game, move |path| {
+            let mut job = reporter.scan_job.lock();
+            job.at = path.to_string_lossy().to_string();
+            // Returning false stops the walk, which is how Stop works.
+            !job.cancelled
+        });
+
+        let mut job = app.scan_job.lock();
+        job.running = false;
+        job.done = true;
+        job.at = String::new();
+        job.found = found;
+    });
+
+    Json(json!({ "started": true })).into_response()
+}
+
+async fn installs_scan_state(State(ctx): State<Ctx>) -> Response {
+    Json(ctx.app.scan_job.lock().clone()).into_response()
+}
+
+async fn installs_scan_stop(State(ctx): State<Ctx>) -> Response {
+    ctx.app.scan_job.lock().cancelled = true;
+    Json(json!({ "ok": true })).into_response()
 }
 
 #[derive(Deserialize)]

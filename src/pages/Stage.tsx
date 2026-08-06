@@ -49,6 +49,8 @@ export default function Stage({ game, onBack }: { game: GameInfo; onBack: () => 
   const [prepared, setPrepared] = useState<PreparedLaunch | null>(null);
   const [modCount, setModCount] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [scanAt, setScanAt] = useState("");
 
   // Which edition of this game is on screen. Null is the game itself.
   const [edition, setEdition] = useState<string | null>(null);
@@ -121,22 +123,64 @@ export default function Stage({ game, onBack }: { game: GameInfo; onBack: () => 
     }
   };
 
+  const accept = useCallback(
+    async (root: string) => {
+      await api.installsRemember(game.id, root, true);
+      await refreshInstalled();
+      await load();
+      toast.success(`${game.name} found`, root);
+    },
+    [game.id, game.name, refreshInstalled, load, toast],
+  );
+
+  /**
+   * Find the game.
+   *
+   * The quick pass covers the Steam registry and the folders installers use,
+   * and takes a second or two. When it comes up empty the search widens to
+   * every drive rather than telling the user to go and find it themselves —
+   * repacks live in folders named anything at all.
+   */
   const detect = async () => {
     setBusy(true);
     try {
       const results = await api.installsDiscover(game.id);
-      if (results.length === 0) {
-        toast.info("Not found automatically", "Point the launcher at the folder instead.");
+      if (results.length > 0) {
+        await accept(results[0].root);
         return;
       }
-      await api.installsRemember(game.id, results[0].root, true);
-      await refreshInstalled();
-      await load();
-      toast.success(`${game.name} found`, results[0].root);
+      await api.installsScan(game.id);
+      setScanning(true);
+    } catch (error) {
+      toast.error("Search failed", error instanceof Error ? error.message : String(error));
     } finally {
       setBusy(false);
     }
   };
+
+  // While the whole machine is being searched, show where it has got to.
+  useEffect(() => {
+    if (!scanning) return;
+    const timer = window.setInterval(async () => {
+      try {
+        const state = await api.installsScanState();
+        setScanAt(state.at);
+        if (!state.running) {
+          window.clearInterval(timer);
+          setScanning(false);
+          setScanAt("");
+          if (state.found.length > 0) await accept(state.found[0].root);
+          else if (!state.cancelled) {
+            toast.info("Nothing found", "Point the launcher at the folder instead.");
+          }
+        }
+      } catch {
+        window.clearInterval(timer);
+        setScanning(false);
+      }
+    }, 500);
+    return () => window.clearInterval(timer);
+  }, [scanning, accept, toast]);
 
   const play = async () => {
     if (!active) return;
@@ -272,14 +316,24 @@ export default function Stage({ game, onBack }: { game: GameInfo; onBack: () => 
                   type="button"
                   className="btn btn--solid btn--lg"
                   onClick={detect}
-                  disabled={busy}
+                  disabled={busy || scanning}
                 >
-                  {busy ? <span className="spin" /> : null}
-                  Detect
+                  {busy || scanning ? <span className="spin" /> : null}
+                  {scanning ? "Searching every drive" : "Find it"}
                 </button>
-                <button type="button" className="btn btn--lg" onClick={locate}>
-                  Locate manually
-                </button>
+                {scanning ? (
+                  <button
+                    type="button"
+                    className="btn btn--lg"
+                    onClick={() => void api.installsScanStop()}
+                  >
+                    Stop
+                  </button>
+                ) : (
+                  <button type="button" className="btn btn--lg" onClick={locate}>
+                    Choose the folder
+                  </button>
+                )}
               </>
             ) : openEdition ? (
               <button
@@ -378,19 +432,33 @@ export default function Stage({ game, onBack }: { game: GameInfo; onBack: () => 
                     type="button"
                     className="btn btn--solid"
                     onClick={detect}
-                    disabled={busy}
+                    disabled={busy || scanning}
                   >
-                    Detect automatically
+                    {busy || scanning ? <span className="spin" /> : null}
+                    {scanning ? "Searching" : "Find it"}
                   </button>
-                  <button type="button" className="btn" onClick={locate}>
+                  <button type="button" className="btn" onClick={locate} disabled={scanning}>
                     Choose the folder
                   </button>
                 </div>
               }
             >
-              Roundtable reads the Steam registry and the folders standalone copies usually
-              land in. If that misses, point it at the folder holding{" "}
-              <span className="mono">{game.executable}</span>.
+              {scanning ? (
+                <>
+                  Searching every drive for {game.name}. Any folder near it will
+                  do, whatever it is called.
+                  <br />
+                  <span className="mono w4 truncate" style={{ display: "block", marginTop: "var(--s3)", fontSize: "var(--t-2xs)" }}>
+                    {scanAt || "…"}
+                  </span>
+                </>
+              ) : (
+                <>
+                  Press Find it and Roundtable checks Steam, the usual folders,
+                  then every drive. Or point it at the game yourself — any folder
+                  at or near it works.
+                </>
+              )}
             </Blank>
           </Card>
         ) : (

@@ -26,6 +26,7 @@ import type {
   PatchReport,
   PreparedLaunch,
   Profile,
+  ScanState,
   SaveFolder,
   SaveSummary,
   Settings,
@@ -109,6 +110,11 @@ export const api = {
   installsActive: (game: GameId) => get<Installation | null>("/installs/active", { game }),
   installsRemember: (game: GameId, path: string, makeDefault: boolean) =>
     post<Installation>("/installs/remember", { game, path, makeDefault }),
+  /** Searches every drive. Returns at once; watch installsScanState. */
+  installsScan: (game: GameId) => post<{ started: boolean }>(`/installs/scan?game=${game}`, {}),
+  installsScanState: () => get<ScanState>("/installs/scan/state"),
+  installsScanStop: () => post<{ ok: boolean }>("/installs/scan/stop", {}),
+
   installsForget: (game: GameId, path: string) =>
     post<void>("/installs/forget", { game, path }),
 

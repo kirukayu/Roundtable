@@ -96,6 +96,49 @@ impl Game {
         }
     }
 
+    /// Files that identify the game's own folder, whatever the executable is
+    /// called.
+    ///
+    /// Repacks rename and repackage the launcher freely, but none of them can
+    /// touch the data archives — the game will not load without them, under
+    /// exactly these names. So when the executable cannot be found by name,
+    /// these are what say "the game is here".
+    pub fn signature_files(self) -> &'static [&'static str] {
+        match self {
+            Game::EldenRing => &["Data0.bdt", "Data0.bhd", "regulation.bin"],
+            Game::Nightreign => &["Data0.bdt", "Data0.bhd", "regulation.bin"],
+            Game::ArmoredCore6 => &["Data0.bdt", "Data0.bhd", "regulation.bin"],
+            Game::Sekiro => &["data1.bdt", "data1.bhd"],
+            Game::DarkSouls3 => &["Data1.bdt", "Data1.bhd"],
+            Game::DarkSouls2 => &["GameDataEbl.bdt"],
+            Game::DarkSoulsRemastered => &["dvdbnd0.bhd", "dvdbnd0.bdt"],
+            Game::Bloodborne | Game::DemonsSouls => &[],
+        }
+    }
+
+    /// Executables in a game folder that are not the game.
+    ///
+    /// A repack ships several: the anti-cheat shim, a language picker, the
+    /// co-op launcher, whatever the cracker added. When the real executable has
+    /// been renamed, these are the ones to rule out before guessing.
+    pub fn helper_executables(self) -> &'static [&'static str] {
+        &[
+            "start_protected_game.exe",
+            "ersc_launcher.exe",
+            "language selector.exe",
+            "modengine2_launcher.exe",
+            "me3.exe",
+            "me3-launcher.exe",
+            "launcher.exe",
+            "unins000.exe",
+            "vcredist_x64.exe",
+            "dxsetup.exe",
+            "crashpad_handler.exe",
+            "steamerrorreporter.exe",
+            "steamerrorreporter64.exe",
+        ]
+    }
+
     /// Easy Anti-Cheat shim that Steam launches. Starting the real executable
     /// directly is what "anti-cheat off" means for these titles.
     pub fn eac_executable(self) -> Option<&'static str> {

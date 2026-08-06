@@ -1,6 +1,6 @@
 [package]
 name = "roundtable"
-version = "0.2.0"
+version = "0.2.1"
 description = "Mod, co-op and save manager for FromSoftware titles"
 edition = "2021"
 rust-version = "1.82"

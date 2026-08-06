@@ -296,6 +296,16 @@ export interface WikiSearchResult {
   state: WikiIndexState;
 }
 
+/** Progress of the whole-machine search for a game. */
+export interface ScanState {
+  running: boolean;
+  done: boolean;
+  /** The folder being looked at, so the wait shows something. */
+  at: string;
+  found: Installation[];
+  cancelled: boolean;
+}
+
 /* ── Diagnostics ──────────────────────────────────────────────────── */
 
 export interface Finding {
