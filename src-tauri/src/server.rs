@@ -110,6 +110,7 @@ pub async fn start(app: Arc<AppState>) -> crate::error::Result<Server> {
         // Editions: total conversions that launch as a game of their own.
         .route("/editions", get(editions))
         .route("/editions/locate", post(edition_locate))
+        .route("/editions/scan", post(edition_scan))
         .route("/editions/patch", post(edition_patch))
         .route("/editions/run", post(edition_run))
         .route("/editions/install", post(edition_install))
@@ -121,6 +122,8 @@ pub async fn start(app: Arc<AppState>) -> crate::error::Result<Server> {
         .route("/wiki", get(wiki_search))
         .route("/wiki/page", get(wiki_page))
         .route("/wiki/sync", post(wiki_sync))
+        .route("/language", get(language_status).post(language_set))
+        .route("/update", get(update_check))
         .route("/diagnose", get(diagnose))
         .route("/match", get(match_fingerprint))
         .route("/match/compare", post(match_compare))
@@ -862,6 +865,98 @@ fn effective_regulation(
     path.is_file().then_some(path)
 }
 
+/// What language the emulated Steam is telling the game to use.
+async fn language_status(State(ctx): State<Ctx>, Query(q): Query<GameQ>) -> Response {
+    match ctx.app.active_install(q.game) {
+        Ok(install) => Json(crate::language::status(&install.game_dir)).into_response(),
+        Err(error) => out::<()>(Err(error)),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LanguageBody {
+    game: crate::games::Game,
+    language: String,
+}
+
+async fn language_set(State(ctx): State<Ctx>, Json(body): Json<LanguageBody>) -> Response {
+    match ctx.app.active_install(body.game) {
+        Ok(install) => out(crate::language::set(&install.game_dir, &body.language)),
+        Err(error) => out::<()>(Err(error)),
+    }
+}
+
+/// Whether a newer Roundtable has been released.
+///
+/// It reports rather than installs. Replacing a running executable needs a
+/// signed update manifest and a restart dance, and getting that wrong on
+/// somebody else's machine is worse than a line of text saying there is a new
+/// version.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateInfo {
+    current: String,
+    latest: Option<String>,
+    newer: bool,
+    url: String,
+}
+
+async fn update_check(State(ctx): State<Ctx>) -> Response {
+    const CURRENT: &str = env!("CARGO_PKG_VERSION");
+    const RELEASES: &str = "https://github.com/kirukayu/Roundtable/releases/latest";
+
+    let latest = ctx
+        .app
+        .http
+        .get("https://api.github.com/repos/kirukayu/Roundtable/releases/latest")
+        .header("accept", "application/vnd.github+json")
+        .send()
+        .await
+        .ok();
+
+    let tag = match latest {
+        Some(response) if response.status().is_success() => response
+            .json::<serde_json::Value>()
+            .await
+            .ok()
+            .and_then(|body| {
+                body.get("tag_name")
+                    .and_then(serde_json::Value::as_str)
+                    .map(|tag| tag.trim_start_matches('v').to_string())
+            }),
+        _ => None,
+    };
+
+    let newer = tag.as_deref().is_some_and(|t| is_newer(t, CURRENT));
+
+    Json(UpdateInfo {
+        current: CURRENT.to_string(),
+        latest: tag,
+        newer,
+        url: RELEASES.to_string(),
+    })
+    .into_response()
+}
+
+/// Compares two dotted versions numerically, so 0.10 beats 0.9.
+fn is_newer(candidate: &str, current: &str) -> bool {
+    let parts = |text: &str| -> Vec<u32> {
+        text.split(['.', '-'])
+            .map(|piece| piece.parse::<u32>().unwrap_or(0))
+            .collect()
+    };
+    let (a, b) = (parts(candidate), parts(current));
+    for index in 0..a.len().max(b.len()) {
+        let left = a.get(index).copied().unwrap_or(0);
+        let right = b.get(index).copied().unwrap_or(0);
+        if left != right {
+            return left > right;
+        }
+    }
+    false
+}
+
 /// Every check Roundtable can run against this machine.
 async fn diagnose(State(ctx): State<Ctx>, Query(q): Query<MatchQ>) -> Response {
     match ctx.app.active_install(q.game) {
@@ -1040,6 +1135,62 @@ async fn edition_locate(State(ctx): State<Ctx>, Json(body): Json<EditionLocateBo
             spec.markers.join(", ")
         )))),
     }
+}
+
+/// Searches every drive for an edition, reusing the install scan's progress so
+/// the interface has one thing to poll.
+async fn edition_scan(State(ctx): State<Ctx>, Json(body): Json<EditionBody>) -> Response {
+    let Some(spec) = crate::edition::spec(&body.edition) else {
+        return out::<()>(Err(crate::error::Error::msg("no such edition")));
+    };
+    if ctx.app.scan_job.lock().running {
+        return out::<()>(Err(crate::error::Error::msg("a search is already running")));
+    }
+    let install = match ctx.app.active_install(body.game) {
+        Ok(install) => install,
+        Err(error) => return out::<()>(Err(error)),
+    };
+
+    {
+        let mut job = ctx.app.scan_job.lock();
+        *job = crate::commands::ScanState {
+            running: true,
+            at: "Starting".into(),
+            ..Default::default()
+        };
+    }
+
+    let app = Arc::clone(&ctx.app);
+    let id = spec.id.to_string();
+
+    std::thread::spawn(move || {
+        let reporter = Arc::clone(&app);
+        let found = crate::edition::spec(&id)
+            .map(|spec| {
+                crate::edition::deep_discover(spec, &install, move |path| {
+                    let mut job = reporter.scan_job.lock();
+                    job.at = path.to_string_lossy().to_string();
+                    !job.cancelled
+                })
+            })
+            .unwrap_or_default();
+
+        // Remember the first one so the next probe does not have to search again.
+        if let Some(first) = found.first() {
+            {
+                let mut settings = app.settings.lock();
+                settings.editions.insert(id, first.root.clone());
+            }
+            let _ = app.settings.lock().clone().save(&app.app_data);
+        }
+
+        let mut job = app.scan_job.lock();
+        job.running = false;
+        job.done = true;
+        job.at = String::new();
+    });
+
+    Json(json!({ "started": true })).into_response()
 }
 
 fn plan_edition(
@@ -1539,6 +1690,37 @@ async fn pick_file(Query(q): Query<PickFileQ>) -> Response {
     match crate::dialog::pick_file(&title, &filters) {
         Some(path) => Json(json!({ "path": path })).into_response(),
         None => Json(json!({ "path": null })).into_response(),
+    }
+}
+
+#[cfg(test)]
+mod update_tests {
+    use super::is_newer;
+
+    #[test]
+    fn a_higher_version_is_newer() {
+        assert!(is_newer("0.2.1", "0.2.0"));
+        assert!(is_newer("0.3.0", "0.2.9"));
+        assert!(is_newer("1.0.0", "0.9.9"));
+    }
+
+    #[test]
+    fn the_same_version_is_not_newer() {
+        assert!(!is_newer("0.2.1", "0.2.1"));
+        assert!(!is_newer("0.2.0", "0.2.1"));
+    }
+
+    #[test]
+    fn versions_compare_numerically_not_as_text() {
+        // The comparison people get wrong: as strings, "0.10" sorts below "0.9".
+        assert!(is_newer("0.10.0", "0.9.0"));
+        assert!(!is_newer("0.9.0", "0.10.0"));
+    }
+
+    #[test]
+    fn a_missing_component_counts_as_zero() {
+        assert!(is_newer("0.3", "0.2.9"));
+        assert!(!is_newer("0.2", "0.2.0"));
     }
 }
 

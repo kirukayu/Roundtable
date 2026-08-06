@@ -171,50 +171,106 @@ fn looks_like_game_dir(dir: &Path) -> bool {
 
 /// Looks for an edition around a game installation.
 ///
-/// The mod belongs in its own folder rather than inside the game, so the search
-/// walks outward: the install root first, then its siblings, then the siblings
-/// of each parent for a couple of levels. That covers the shape people actually
-/// end up with, where the mod sits next to the game on the same drive.
+/// The mod goes in its own folder rather than inside the game, and that folder
+/// can be called anything and sit anywhere. So the search is by content, not by
+/// name: any directory holding the mod's marker files is the mod, whatever it
+/// says on it. It walks the game's own folder, then outward from it, each level
+/// a few directories deep.
 pub fn discover(spec: &EditionSpec, install: &Installation) -> Vec<EditionInstall> {
     let mut found: Vec<EditionInstall> = Vec::new();
     let mut seen: Vec<PathBuf> = Vec::new();
 
-    let consider = |dir: &Path, found: &mut Vec<EditionInstall>, seen: &mut Vec<PathBuf>| {
-        let key = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
-        if seen.contains(&key) {
-            return;
-        }
-        seen.push(key);
-        if let Some(edition) = probe(spec, dir) {
-            found.push(edition);
-        }
-    };
-
-    // The install itself, in case the mod was dropped straight into it.
-    consider(&install.root, &mut found, &mut seen);
-    consider(&install.game_dir, &mut found, &mut seen);
-
+    // Widening rings around the game: itself, its parent, its grandparent.
+    // Depth falls as the ring widens, so the cost stays roughly flat.
+    let mut roots: Vec<(PathBuf, usize)> = vec![
+        (install.game_dir.clone(), 3),
+        (install.root.clone(), 4),
+    ];
+    // Depth falls as the ring widens. The outermost can be a drive root, and
+    // walking one of those deeply would cost more than the mod is worth finding
+    // that way — the whole-disk search exists for that case.
     let mut level = install.root.as_path();
-    for _ in 0..3 {
+    for depth in [4usize, 3, 2] {
         let Some(parent) = level.parent() else { break };
-        let Ok(entries) = std::fs::read_dir(parent) else {
-            level = parent;
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_dir() {
-                continue;
-            }
-            let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
-            if name.contains(spec.folder_hint) {
-                consider(&path, &mut found, &mut seen);
-            }
-        }
+        roots.push((parent.to_path_buf(), depth));
         level = parent;
     }
 
+    for (root, depth) in roots {
+        for dir in scan_for_edition(spec, &root, depth) {
+            let key = dir.canonicalize().unwrap_or_else(|_| dir.clone());
+            if seen.contains(&key) {
+                continue;
+            }
+            seen.push(key);
+            if let Some(edition) = probe(spec, &dir) {
+                found.push(edition);
+            }
+        }
+    }
+
+    // Shallowest first, so an install beside the game beats a stray copy in a
+    // downloads folder five levels down.
+    found.sort_by_key(|e| e.root.components().count());
     found
+}
+
+/// Searches every fixed drive. Slow, so it only runs when asked.
+///
+/// `progress` is called as directories are entered and returns false to stop.
+pub fn deep_discover(
+    spec: &EditionSpec,
+    install: &Installation,
+    mut progress: impl FnMut(&Path) -> bool,
+) -> Vec<EditionInstall> {
+    let mut found = Vec::new();
+    let mut seen = 0usize;
+
+    for drive in crate::game::fixed_drives() {
+        for entry in walkdir::WalkDir::new(&drive)
+            .follow_links(false)
+            .into_iter()
+            .filter_entry(|entry| {
+                entry.depth() == 0 || !crate::game::is_noise(entry.file_name().to_string_lossy().as_ref())
+            })
+            .filter_map(std::result::Result::ok)
+            .filter(|entry| entry.file_type().is_dir())
+        {
+            seen += 1;
+            if seen % 400 == 0 && !progress(entry.path()) {
+                return found;
+            }
+            if let Some(edition) = probe(spec, entry.path()) {
+                found.push(edition);
+                if found.len() >= 8 {
+                    return found;
+                }
+            }
+        }
+    }
+
+    let _ = install;
+    found
+}
+
+/// Directories under `root` that hold the edition's marker files.
+fn scan_for_edition(spec: &EditionSpec, root: &Path, max_depth: usize) -> Vec<PathBuf> {
+    if !root.is_dir() {
+        return Vec::new();
+    }
+    walkdir::WalkDir::new(root)
+        .max_depth(max_depth)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|entry| {
+            entry.depth() == 0
+                || !crate::game::is_noise(entry.file_name().to_string_lossy().as_ref())
+        })
+        .filter_map(std::result::Result::ok)
+        .filter(|entry| entry.file_type().is_dir())
+        .map(|entry| entry.path().to_path_buf())
+        .filter(|path| spec.markers.iter().all(|m| path.join(m).exists()))
+        .collect()
 }
 
 /// Builds the launch for an edition.
@@ -633,11 +689,26 @@ pub fn extract_archive(
 mod tests {
     use super::*;
 
+    /// An isolated tree for one test.
+    ///
+    /// Nested two levels below the temp directory on purpose: discovery walks
+    /// up from the game and scans the parents, so a game placed directly in
+    /// `%TEMP%` finds every other test's fixtures sitting beside it.
     fn temp(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("roundtable-edition-{name}"));
-        std::fs::remove_dir_all(&dir).ok();
+        let dir = std::env::temp_dir()
+            .join(format!("roundtable-edition-{name}"))
+            .join("box")
+            .join("inner");
+        std::fs::remove_dir_all(dir.parent().unwrap().parent().unwrap()).ok();
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    /// Removes the whole isolated tree, not just the leaf.
+    fn clean(dir: &Path) {
+        if let Some(top) = dir.parent().and_then(Path::parent) {
+            std::fs::remove_dir_all(top).ok();
+        }
     }
 
     /// A folder shaped like Convergence 3.0.1 as it comes out of the archive.
@@ -676,7 +747,7 @@ mod tests {
     fn a_folder_without_the_marker_is_not_an_edition() {
         let dir = temp("empty");
         assert!(probe(&CONVERGENCE, &dir).is_none());
-        std::fs::remove_dir_all(&dir).ok();
+        clean(&dir);
     }
 
     #[test]
@@ -691,7 +762,74 @@ mod tests {
         assert!(found.supports_coop());
         assert!(found.coop_dll.is_none());
 
-        std::fs::remove_dir_all(dir.parent().unwrap()).ok();
+        clean(&dir);
+    }
+
+    #[test]
+    fn an_edition_in_a_folder_named_anything_is_still_found() {
+        // Name matching is what used to decide this, so a folder called
+        // something else was invisible even sitting next to the game.
+        let base = temp("oddname");
+        let game_root = base.join("ELDEN RING");
+        std::fs::create_dir_all(game_root.join("Game")).unwrap();
+        lay_out(&base.join("totally unrelated name"), false);
+
+        let install = installation(InstallKind::Standalone, game_root);
+        let found = discover(&CONVERGENCE, &install);
+        assert_eq!(found.len(), 1, "found {found:?}");
+
+        clean(&base);
+    }
+
+    #[test]
+    fn an_edition_nested_a_few_levels_away_is_found() {
+        let base = temp("nested-edition");
+        let game_root = base.join("Games").join("ELDEN RING");
+        std::fs::create_dir_all(game_root.join("Game")).unwrap();
+        lay_out(&base.join("Games").join("mods").join("ConvergenceER 3.0.1"), false);
+
+        let install = installation(InstallKind::Standalone, game_root);
+        let found = discover(&CONVERGENCE, &install);
+        assert_eq!(found.len(), 1, "found {found:?}");
+
+        clean(&base);
+    }
+
+    #[test]
+    fn an_edition_inside_the_game_folder_is_found_even_though_it_will_not_run() {
+        // It has to be found before it can be told it is in the wrong place.
+        let base = temp("inside-game");
+        let game_root = base.join("ELDEN RING");
+        let game_dir = game_root.join("Game");
+        std::fs::create_dir_all(&game_dir).unwrap();
+        lay_out(&game_dir.join("ConvergenceER"), false);
+
+        let install = installation(InstallKind::Standalone, game_root);
+        let found = discover(&CONVERGENCE, &install);
+        assert_eq!(found.len(), 1, "found {found:?}");
+        assert!(found[0].inside_game_dir);
+
+        clean(&base);
+    }
+
+    #[test]
+    fn the_closest_copy_wins_when_there_are_several() {
+        let base = temp("several");
+        let game_root = base.join("ELDEN RING");
+        std::fs::create_dir_all(game_root.join("Game")).unwrap();
+        lay_out(&base.join("ConvergenceER 3.0.1"), false);
+        lay_out(&base.join("downloads").join("old").join("ConvergenceER 2.2"), false);
+
+        let install = installation(InstallKind::Standalone, game_root);
+        let found = discover(&CONVERGENCE, &install);
+        assert!(found.len() >= 2, "found {found:?}");
+        assert_eq!(
+            found[0].root,
+            base.join("ConvergenceER 3.0.1"),
+            "the one beside the game should come first"
+        );
+
+        clean(&base);
     }
 
     #[test]
@@ -706,7 +844,7 @@ mod tests {
         assert_eq!(found.len(), 1, "expected one edition, got {found:?}");
         assert!(!found[0].inside_game_dir);
 
-        std::fs::remove_dir_all(&base).ok();
+        clean(&base);
     }
 
     #[test]
@@ -730,7 +868,7 @@ mod tests {
         assert!(line.contains("convergence - seamless.me3"), "got {line}");
         assert_eq!(plan.working_dir, edition_root);
 
-        std::fs::remove_dir_all(&base).ok();
+        clean(&base);
     }
 
     #[test]
@@ -748,7 +886,7 @@ mod tests {
         assert!(!plan.skip_steam_init);
         assert!(!plan.args.join(" ").contains("--skip-steam-init"));
 
-        std::fs::remove_dir_all(&base).ok();
+        clean(&base);
     }
 
     #[test]
@@ -769,7 +907,7 @@ mod tests {
             .iter()
             .any(|n| n.title.contains("Co-op is not wired up")));
 
-        std::fs::remove_dir_all(&base).ok();
+        clean(&base);
     }
 
     #[test]
@@ -796,7 +934,7 @@ mod tests {
         let again = probe(&CONVERGENCE, &edition_root).unwrap();
         assert!(again.coop_dll.is_some());
 
-        std::fs::remove_dir_all(&base).ok();
+        clean(&base);
     }
 
     #[test]
@@ -817,7 +955,7 @@ mod tests {
             .iter()
             .any(|n| n.title.contains("wrong folder")));
 
-        std::fs::remove_dir_all(&base).ok();
+        clean(&base);
     }
 
     #[test]
@@ -836,7 +974,7 @@ mod tests {
         assert!(!plan.is_runnable());
         assert!(plan.notices.iter().any(|n| n.title.contains("no loader")));
 
-        std::fs::remove_dir_all(&base).ok();
+        clean(&base);
     }
 
     #[test]

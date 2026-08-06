@@ -203,7 +203,7 @@ fn scan_by_signature(game: Game, root: &Path, max_depth: usize) -> Vec<PathBuf> 
 }
 
 /// Folders never worth walking into.
-fn is_noise(name: &str) -> bool {
+pub fn is_noise(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
         "windows"
@@ -471,7 +471,7 @@ fn install_folder_names(game: Game) -> Vec<String> {
 }
 
 #[cfg(windows)]
-fn fixed_drives() -> Vec<PathBuf> {
+pub fn fixed_drives() -> Vec<PathBuf> {
     ('A'..='Z')
         .map(|letter| PathBuf::from(format!("{letter}:\\")))
         .filter(|p| p.is_dir())
@@ -479,7 +479,7 @@ fn fixed_drives() -> Vec<PathBuf> {
 }
 
 #[cfg(not(windows))]
-fn fixed_drives() -> Vec<PathBuf> {
+pub fn fixed_drives() -> Vec<PathBuf> {
     vec![PathBuf::from("/")]
 }
 

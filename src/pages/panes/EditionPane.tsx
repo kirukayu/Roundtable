@@ -97,6 +97,44 @@ export default function EditionPane({
     if (found) await onChanged();
   };
 
+  /**
+   * Searches every drive for an existing copy.
+   *
+   * The rings around the game cover where the mod usually goes; this covers
+   * where it went instead.
+   */
+  const [scanning, setScanning] = useState(false);
+  const [scanAt, setScanAt] = useState("");
+
+  const scan = async () => {
+    try {
+      await api.editionScan(game, spec.id);
+      setScanning(true);
+    } catch (error) {
+      toast.error("Could not search", error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  useEffect(() => {
+    if (!scanning) return;
+    const timer = window.setInterval(async () => {
+      try {
+        const state = await api.installsScanState();
+        setScanAt(state.at);
+        if (!state.running) {
+          window.clearInterval(timer);
+          setScanning(false);
+          setScanAt("");
+          await onChanged();
+        }
+      } catch {
+        window.clearInterval(timer);
+        setScanning(false);
+      }
+    }, 500);
+    return () => window.clearInterval(timer);
+  }, [scanning, onChanged]);
+
   const locate = async () => {
     const path = await api.pickFolder(`Where is ${spec.short} installed?`);
     if (!path) return;
@@ -169,19 +207,36 @@ export default function EditionPane({
                   type="button"
                   className="btn btn--solid"
                   onClick={chooseArchive}
-                  disabled={busy}
+                  disabled={busy || scanning}
                 >
                   {busy ? <span className="spin" /> : null}
                   Choose the archive
                 </button>
-                <button type="button" className="btn" onClick={chooseFolder}>
-                  I already unpacked it
+                <button type="button" className="btn" onClick={scan} disabled={scanning}>
+                  {scanning ? <span className="spin" /> : null}
+                  {scanning ? "Searching" : "Already have it"}
+                </button>
+                <button type="button" className="btn btn--ghost" onClick={chooseFolder} disabled={scanning}>
+                  Point at the folder
                 </button>
               </div>
             }
           >
-            Pick the zip you downloaded. Roundtable unpacks it, wires up Seamless
-            Co-op and starts the game without Steam. Around ten gigabytes.
+            {scanning ? (
+              <>
+                Searching every drive for {spec.short}.
+                <br />
+                <span className="mono truncate w4" style={{ display: "block", marginTop: "var(--s3)", fontSize: "var(--t-2xs)" }}>
+                  {scanAt || "…"}
+                </span>
+              </>
+            ) : (
+              <>
+                Pick the zip you downloaded. Roundtable unpacks it, wires up
+                Seamless Co-op and starts the game without Steam. Around ten
+                gigabytes.
+              </>
+            )}
           </Blank>
 
           <hr className="hr" />

@@ -306,6 +306,25 @@ export interface ScanState {
   cancelled: boolean;
 }
 
+/* ── Language ─────────────────────────────────────────────────────── */
+
+export interface LanguageFile {
+  file: string;
+  path: string;
+  value: string | null;
+  /** The line exists but is commented out, which is the usual cause. */
+  disabled: boolean;
+}
+
+export interface LanguageStatus {
+  files: LanguageFile[];
+  current: string | null;
+  /** Two configs disagree, so one of them is being ignored. */
+  conflict: boolean;
+  options: [string, string][];
+  selector: string | null;
+}
+
 /* ── Diagnostics ──────────────────────────────────────────────────── */
 
 export interface Finding {

@@ -20,6 +20,7 @@ import type {
   GameId,
   GameInfo,
   Installation,
+  LanguageStatus,
   LaunchResult,
   LoaderInstall,
   ModRecord,
@@ -160,6 +161,9 @@ export const api = {
     get<EditionStatus[]>("/editions", { game, coop: String(coop) }),
   editionLocate: (edition: string, path: string) =>
     post<EditionInstall>("/editions/locate", { edition, path }),
+  /** Searches every drive. Watch installsScanState for progress. */
+  editionScan: (game: GameId, edition: string) =>
+    post<{ started: boolean }>("/editions/scan", { game, edition }),
   editionPatch: (game: GameId, edition: string, coop: boolean) =>
     post<PatchReport>("/editions/patch", { game, edition, coop }),
   editionRun: (game: GameId, edition: string, coop: boolean) =>
@@ -190,6 +194,11 @@ export const api = {
       ...(source ? { source } : {}),
       ...(edition ? { edition } : {}),
     })}`, {}),
+
+  /* What language the emulated Steam tells the game to use. */
+  language: (game: GameId) => get<LanguageStatus>("/language", { game }),
+  languageSet: (game: GameId, language: string) =>
+    post<string[]>("/language", { game, language }),
 
   /* Every check Roundtable can run against this machine. */
   diagnose: (game: GameId, edition?: string | null) =>

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { EditionSwitch } from "../components/EditionSwitch";
 import { Icon } from "../components/Icons";
 import { HealthCard } from "../components/HealthCard";
+import { LanguageCard } from "../components/LanguageCard";
 import { MatchCard } from "../components/MatchCard";
 import { EASE } from "../components/Motion";
 import { Blank, Card, Chip, Skeleton, useToast } from "../components/ui";
@@ -513,17 +514,20 @@ export default function Stage({ game, onBack }: { game: GameInfo; onBack: () => 
             {pane === "codex" && <CodexPane edition={edition} />}
             {pane === "wiki" && <WikiPane edition={edition} />}
             {pane === "system" && (
-              <SystemPane
-                gameId={game.id}
-                install={install}
-                eac={eac}
-                onEacChanged={setEac}
-                onForget={async () => {
-                  await api.installsForget(game.id, install.root);
-                  await refreshInstalled();
-                  onBack();
-                }}
-              />
+              <div className="col">
+                <LanguageCard game={game.id} />
+                <SystemPane
+                  gameId={game.id}
+                  install={install}
+                  eac={eac}
+                  onEacChanged={setEac}
+                  onForget={async () => {
+                    await api.installsForget(game.id, install.root);
+                    await refreshInstalled();
+                    onBack();
+                  }}
+                />
+              </div>
             )}
           </>
         )}

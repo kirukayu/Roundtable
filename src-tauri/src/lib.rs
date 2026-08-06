@@ -10,6 +10,7 @@ pub mod formats;
 pub mod game;
 pub mod games;
 pub mod install;
+pub mod language;
 pub mod launch;
 pub mod loader;
 pub mod matchup;
