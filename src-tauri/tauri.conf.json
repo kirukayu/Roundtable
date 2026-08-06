@@ -4,33 +4,27 @@
   "version": "0.1.0",
   "identifier": "app.roundtable.launcher",
   "build": {
-    "frontendDist": "../dist",
-    "devUrl": "http://localhost:5183",
-    "beforeDevCommand": "npm run dev",
+    "frontendDist": "../launch",
     "beforeBuildCommand": "npm run build"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
+        "label": "main",
         "title": "Roundtable",
-        "width": 1320,
-        "height": 860,
-        "minWidth": 1080,
-        "minHeight": 700,
-        "resizable": true,
+        "width": 620,
+        "height": 460,
+        "resizable": false,
         "decorations": false,
-        "transparent": true,
-        "shadow": true,
+        "transparent": false,
         "center": true,
-        "theme": "Dark"
+        "theme": "Dark",
+        "backgroundColor": "#050505"
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost data: https://cdn.cloudflare.steamstatic.com https://shared.cloudflare.steamstatic.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost",
-      "assetProtocol": {
-        "enable": true,
-        "scope": ["$APPDATA/**", "$APPCACHE/**"]
-      }
+      "csp": null
     }
   },
   "bundle": {
@@ -50,7 +44,8 @@
     "windows": {
       "nsis": {
         "installMode": "currentUser",
-        "languages": ["English", "Russian"]
+        "languages": ["English", "Russian"],
+        "installerIcon": "icons/icon.ico"
       }
     }
   }

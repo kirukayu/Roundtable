@@ -238,9 +238,19 @@ fn install_folder_names(game: Game) -> Vec<String> {
     let base = match game {
         Game::EldenRing => vec!["ELDEN RING", "Elden Ring", "EldenRing"],
         Game::Nightreign => vec!["ELDEN RING NIGHTREIGN", "Nightreign"],
+        Game::DarkSoulsRemastered => {
+            vec!["DARK SOULS REMASTERED", "Dark Souls Remastered", "DARK SOULS"]
+        }
+        Game::DarkSouls2 => vec![
+            "DARK SOULS II Scholar of the First Sin",
+            "Dark Souls II",
+            "DarkSoulsII",
+        ],
         Game::DarkSouls3 => vec!["DARK SOULS III", "Dark Souls III", "DarkSoulsIII"],
         Game::Sekiro => vec!["Sekiro", "Sekiro Shadows Die Twice"],
         Game::ArmoredCore6 => vec!["ARMORED CORE VI FIRES OF RUBICON", "Armored Core VI"],
+        // Never installed on this platform.
+        Game::Bloodborne | Game::DemonsSouls => vec![],
     };
     base.into_iter().map(str::to_string).collect()
 }

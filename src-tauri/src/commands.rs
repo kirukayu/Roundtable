@@ -164,9 +164,17 @@ pub fn installs_forget(state: State<'_, AppState>, game: Game, path: PathBuf) ->
     state.persist()
 }
 
+/// The remembered installation for a game, or nothing.
+///
+/// Not having located a game is the state every game starts in, so it is
+/// reported as an absent value rather than a failure.
 #[tauri::command]
-pub fn installs_active(state: State<'_, AppState>, game: Game) -> Result<Installation> {
-    state.active_install(game)
+pub fn installs_active(state: State<'_, AppState>, game: Game) -> Result<Option<Installation>> {
+    match state.active_install(game) {
+        Ok(install) => Ok(Some(install)),
+        Err(crate::error::Error::NoGameSelected) => Ok(None),
+        Err(other) => Err(other),
+    }
 }
 
 #[tauri::command]
@@ -184,10 +192,14 @@ pub fn loaders_discover(state: State<'_, AppState>, game: Game) -> Vec<LoaderIns
     loader::discover(game, root.as_deref())
 }
 
+/// The anti-cheat state, or nothing while the game has not been located.
 #[tauri::command]
-pub fn eac_status(state: State<'_, AppState>, game: Game) -> Result<eac::EacStatus> {
-    let install = state.active_install(game)?;
-    Ok(eac::status(game, &install.game_dir))
+pub fn eac_status(state: State<'_, AppState>, game: Game) -> Result<Option<eac::EacStatus>> {
+    match state.active_install(game) {
+        Ok(install) => Ok(Some(eac::status(game, &install.game_dir))),
+        Err(crate::error::Error::NoGameSelected) => Ok(None),
+        Err(other) => Err(other),
+    }
 }
 
 #[tauri::command]

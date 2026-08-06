@@ -15,15 +15,26 @@ const BASE: &str = "https://api.nexusmods.com/v1";
 /// Nexus keys every game by a slug rather than a Steam id.
 pub const ELDEN_RING: &str = "eldenring";
 
-fn domain_for(game: crate::games::Game) -> &'static str {
+/// Nexus keys every game by a slug. The two console exclusives have no PC
+/// modding scene, so they have no domain.
+fn domain_for(game: crate::games::Game) -> Option<&'static str> {
     use crate::games::Game;
     match game {
-        Game::EldenRing => ELDEN_RING,
-        Game::Nightreign => "eldenringnightreign",
-        Game::DarkSouls3 => "darksouls3",
-        Game::Sekiro => "sekiro",
-        Game::ArmoredCore6 => "armoredcore6firesofrubicon",
+        Game::EldenRing => Some(ELDEN_RING),
+        Game::Nightreign => Some("eldenringnightreign"),
+        Game::DarkSoulsRemastered => Some("darksoulsremastered"),
+        Game::DarkSouls2 => Some("darksouls2"),
+        Game::DarkSouls3 => Some("darksouls3"),
+        Game::Sekiro => Some("sekiro"),
+        Game::ArmoredCore6 => Some("armoredcore6firesofrubicon"),
+        Game::Bloodborne | Game::DemonsSouls => None,
     }
+}
+
+fn require_domain(game: crate::games::Game) -> Result<&'static str> {
+    domain_for(game).ok_or_else(|| {
+        Error::Nexus(format!("{} has no Nexus section", game.display_name()))
+    })
 }
 
 fn request(
@@ -100,7 +111,7 @@ pub async fn mod_info(
     game: crate::games::Game,
     mod_id: u32,
 ) -> Result<ModInfo> {
-    let domain = domain_for(game);
+    let domain = require_domain(game)?;
     get_json(
         client,
         api_key,
@@ -132,7 +143,7 @@ pub async fn mod_files(
     game: crate::games::Game,
     mod_id: u32,
 ) -> Result<Vec<ModFile>> {
-    let domain = domain_for(game);
+    let domain = require_domain(game)?;
     let list: FileList = get_json(
         client,
         api_key,
@@ -165,7 +176,7 @@ pub async fn download_links(
     nxm_key: Option<&str>,
     expires: Option<u64>,
 ) -> Result<Vec<DownloadLink>> {
-    let domain = domain_for(game);
+    let domain = require_domain(game)?;
     let mut url = format!(
         "{BASE}/games/{domain}/mods/{mod_id}/files/{file_id}/download_link.json"
     );
@@ -240,7 +251,11 @@ mod tests {
     #[test]
     fn every_supported_game_has_a_nexus_domain() {
         for game in Game::ALL {
-            let domain = domain_for(game);
+            let Some(domain) = domain_for(game) else {
+                // Console exclusives have no PC modding scene.
+                assert!(!game.is_playable());
+                continue;
+            };
             assert!(!domain.is_empty());
             // Nexus slugs are lowercase alphanumeric: "darksouls3", "armoredcore6…".
             assert!(
@@ -248,8 +263,9 @@ mod tests {
                 "unexpected characters in {domain}"
             );
         }
-        assert_eq!(domain_for(Game::EldenRing), "eldenring");
-        assert_eq!(domain_for(Game::DarkSouls3), "darksouls3");
+        assert_eq!(domain_for(Game::EldenRing), Some("eldenring"));
+        assert_eq!(domain_for(Game::DarkSouls3), Some("darksouls3"));
+        assert_eq!(domain_for(Game::Bloodborne), None);
     }
 
     #[test]

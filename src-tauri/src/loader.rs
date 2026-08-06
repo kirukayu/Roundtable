@@ -402,11 +402,15 @@ impl Me3Profile {
             doc["mem_patch"] = value(patch);
         }
 
-        let mut supports = ArrayOfTables::new();
-        let mut support = Table::new();
-        support["game"] = value(self.game.me3_id());
-        supports.push(support);
-        doc["supports"] = Item::ArrayOfTables(supports);
+        // Only titles me3 knows about get a `supports` block; without one the
+        // profile still loads, it simply cannot be launched by double-click.
+        if let Some(me3_id) = self.game.me3_id() {
+            let mut supports = ArrayOfTables::new();
+            let mut support = Table::new();
+            support["game"] = value(me3_id);
+            supports.push(support);
+            doc["supports"] = Item::ArrayOfTables(supports);
+        }
 
         let mut packages = ArrayOfTables::new();
         for package in self.packages.iter().filter(|p| p.enabled) {
@@ -540,9 +544,13 @@ pub fn write_me3_game_defaults(
         existing.parse().map_err(|e| Error::parse("me3.toml", e))?
     };
 
+    let me3_id = game
+        .me3_id()
+        .ok_or_else(|| Error::msg("me3 does not support this game"))?;
+
     let game_table = ensure_table(doc.as_table_mut(), "game");
     game_table.set_dotted(false);
-    let entry = ensure_table(game_table, game.me3_id());
+    let entry = ensure_table(game_table, me3_id);
     entry["skip_steam_init"] = value(skip_steam_init);
     if let Some(exe) = exe {
         entry["exe"] = value(exe.to_string_lossy().to_string());

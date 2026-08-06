@@ -1,80 +1,85 @@
+import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { CommandPalette, type Command } from "./components/CommandPalette";
+import { Fog } from "./components/Fog";
 import { Icon } from "./components/Icons";
+import { EASE } from "./components/Motion";
 import { useToast } from "./components/ui";
 import { api } from "./lib/ipc";
+import { useProgress, useScrolled } from "./lib/motion";
+import { jumpToTop, useSmoothScroll } from "./lib/smooth";
 import { useApp } from "./lib/store";
 import type { GameId } from "./lib/types";
 
+import Landing from "./pages/Landing";
 import Stage from "./pages/Stage";
 import SettingsOverlay from "./pages/SettingsOverlay";
 
 /**
- * A rounded pane of glass over a slow aurora.
+ * Two screens: the catalogue and one game. Everything else is an overlay.
  *
- * Choosing a game rewrites the aurora, the accent and everything tinted by them,
- * over a full second, so the launcher dissolves from one world into the next
- * rather than swapping a highlight colour.
+ * The fog sits behind both and never restarts, so moving between them feels
+ * like walking through the same room rather than loading a new page.
  */
 export default function App() {
   const { games, settings, patchSettings, profiles, activeProfile, gameRunning, installed } =
     useApp();
   const toast = useToast();
 
-  const [current, setCurrent] = useState<GameId>(settings.selectedGame);
+  const [open, setOpen] = useState<GameId | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const game = games.find((g) => g.id === current) ?? games[0];
+  const game = open ? (games.find((g) => g.id === open) ?? null) : null;
+
+  const rail = useProgress<HTMLDivElement>();
+  // The bar is transparent over the hero and only earns its backdrop once the
+  // page has actually moved.
+  const scrolled = useScrolled(24);
+
+  // Inertial scrolling for the whole document. Everything else on the page is
+  // paced to arrive; the scroll itself has to match or none of it lands.
+  useSmoothScroll(!settings.reduceMotion);
 
   useEffect(() => {
-    if (!game) return;
-    const root = document.documentElement.style;
-    root.setProperty("--a1", game.aurora[0]);
-    root.setProperty("--a2", game.aurora[1]);
-    root.setProperty("--accent", game.accent);
-    root.setProperty("--accent-soft", alpha(game.accent, 0.16));
-    root.setProperty("--accent-glow", alpha(game.accent, 0.42));
-    root.setProperty("--accent-ink", ink(game.accent));
-  }, [game]);
+    const root = document.documentElement;
+    root.dataset.reduceMotion = String(settings.reduceMotion);
+  }, [settings.reduceMotion]);
+
+  // Opening a game starts at its banner rather than wherever the catalogue was
+  // scrolled to. No easing here: a long glide would fight the screen change.
+  useEffect(() => {
+    jumpToTop();
+  }, [open]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        setPaletteOpen((open) => !open);
+        setPaletteOpen((was) => !was);
       } else if ((event.ctrlKey || event.metaKey) && event.key === ",") {
         event.preventDefault();
         setSettingsOpen(true);
-      } else if (event.altKey) {
-        const index = Number.parseInt(event.key, 10) - 1;
-        if (Number.isInteger(index) && index >= 0 && index < games.length) {
-          event.preventDefault();
-          select(games[index].id);
-        }
+      } else if (event.key === "Escape" && open && !paletteOpen && !settingsOpen) {
+        setOpen(null);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [games]);
-
-  const select = (id: GameId) => {
-    setCurrent(id);
-    void patchSettings({ selectedGame: id });
-  };
+  }, [open, paletteOpen, settingsOpen]);
 
   const commands = useMemo<Command[]>(() => {
-    const list: Command[] = games.map((entry, index) => ({
-      id: `go-${entry.id}`,
-      group: "Games",
-      label: entry.name,
-      hint: `Alt ${index + 1}`,
-      glyph: Icon.Play,
-      keywords: installed.has(entry.id) ? "installed" : "not set up",
-      run: () => select(entry.id),
-    }));
+    const list: Command[] = games
+      .filter((entry) => entry.playable)
+      .map((entry) => ({
+        id: `go-${entry.id}`,
+        group: "Games",
+        label: entry.name,
+        glyph: Icon.Play,
+        keywords: installed.has(entry.id) ? "installed" : "locate",
+        run: () => setOpen(entry.id),
+      }));
 
     for (const profile of profiles) {
       list.push({
@@ -85,7 +90,7 @@ export default function App() {
         keywords: profile.seamlessCoop ? "co-op coop" : "",
         run: () => {
           void patchSettings({ activeProfile: profile.id });
-          select(profile.game);
+          setOpen(profile.game);
         },
       });
     }
@@ -106,6 +111,13 @@ export default function App() {
     }
 
     list.push(
+      {
+        id: "act-catalogue",
+        group: "Actions",
+        label: "Back to the catalogue",
+        glyph: Icon.Library,
+        run: () => setOpen(null),
+      },
       {
         id: "act-cache",
         group: "Actions",
@@ -139,59 +151,79 @@ export default function App() {
     return list;
   }, [games, profiles, activeProfile, installed, patchSettings, toast]);
 
+  const running = gameRunning ? games.find((g) => g.id === gameRunning) : null;
+
   return (
-    <div className="win">
-      <div className="aur" aria-hidden="true">
-        <span className="aur__b aur__b--1" />
-        <span className="aur__b aur__b--2" />
-        <span className="aur__b aur__b--3" />
-        <span className="aur__g" />
-      </div>
+    // One switch governs everything that moves. "never" is deliberate: the app
+    // has its own setting for this, and it should not be overruled by an OS
+    // preference the user did not set for this window.
+    <MotionConfig reducedMotion={settings.reduceMotion ? "always" : "never"}>
+      <Fog />
 
-      <Bar running={gameRunning ? games.find((g) => g.id === gameRunning)?.short : undefined} />
+      <div className="rail" ref={rail} aria-hidden="true" />
 
-      <div className="body">
-        <nav className="rail">
-          <div className="rail__cap">Games</div>
-          <div className="rail__list">
-            {games.map((entry) => {
-              const here = entry.id === current;
-              const running = gameRunning === entry.id;
-              return (
-                <button
-                  key={entry.id}
-                  type="button"
-                  className="gm"
-                  aria-current={here}
-                  onClick={() => select(entry.id)}
-                >
-                  <img className="gm__cv" src={entry.coverUrl} alt="" loading="lazy" />
-                  <span className="grow">
-                    <span className="truncate" style={{ display: "block" }}>
-                      {entry.short}
-                    </span>
-                    <span className="gm__s">
-                      {running ? "Running" : installed.has(entry.id) ? "Ready" : "Not set up"}
-                    </span>
-                  </span>
-                  {running && <span className="dot beat" style={{ color: "var(--ok)" }} />}
-                </button>
-              );
-            })}
-          </div>
+      <nav className="nav" data-solid={scrolled}>
+        <button type="button" className="nav__mark" onClick={() => setOpen(null)}>
+          <span className="nav__glyph" />
+          Roundtable
+        </button>
 
-          <button type="button" className="rbtn" onClick={() => setPaletteOpen(true)}>
-            <Icon.Search size={16} />
-            Search
-            <span className="kbd">Ctrl K</span>
+        <div className="nav__links">
+          {running && (
+            <span className="chip chip--ok">
+              <span className="dot beat" />
+              {running.short}
+            </span>
+          )}
+          <button
+            type="button"
+            className="nav__link"
+            aria-current={open === null ? "page" : undefined}
+            onClick={() => setOpen(null)}
+          >
+            Games
           </button>
-          <button type="button" className="rbtn" onClick={() => setSettingsOpen(true)}>
-            <Icon.Settings size={16} />
+          <button type="button" className="nav__link" onClick={() => setPaletteOpen(true)}>
+            Search
+          </button>
+          <button type="button" className="nav__link" onClick={() => setSettingsOpen(true)}>
             Settings
           </button>
-        </nav>
+        </div>
+      </nav>
 
-        <main className="stage">{game && <Stage key={game.id} game={game} />}</main>
+      {/*
+        The two screens overlap for the length of the change. That overlap is
+        the point: the cover the catalogue was showing and the banner the game
+        page opens with carry the same `layoutId`, so one becomes the other
+        instead of the page being swapped underneath you.
+      */}
+      <div className="app">
+        <AnimatePresence initial={false} mode="popLayout">
+          {game ? (
+            <motion.div
+              key={game.id}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: { duration: 0.9, ease: EASE, delay: 0.12 } }}
+              exit={{ opacity: 0, transition: { duration: 0.45, ease: EASE } }}
+            >
+              <Stage game={game} onBack={() => setOpen(null)} />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="catalogue"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: { duration: 0.9, ease: EASE, delay: 0.12 } }}
+              exit={{
+                opacity: 0,
+                filter: "blur(8px)",
+                transition: { duration: 0.5, ease: EASE },
+              }}
+            >
+              <Landing onOpen={setOpen} />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {paletteOpen && (
@@ -204,51 +236,6 @@ export default function App() {
           onClose={() => setSettingsOpen(false)}
         />
       )}
-    </div>
+    </MotionConfig>
   );
-}
-
-function Bar({ running }: { running?: string }) {
-  const win = getCurrentWindow();
-  return (
-    <header className="bar" data-tauri-drag-region>
-      <span className="mark">
-        <span className="mark__d" />
-        Roundtable
-      </span>
-      {running && (
-        <span className="chip chip--ok">
-          <span className="dot beat" />
-          {running}
-        </span>
-      )}
-      <div className="wbtns">
-        <button type="button" className="wbtn" aria-label="Minimise" onClick={() => void win.minimize()}>
-          <Icon.Minus size={15} />
-        </button>
-        <button type="button" className="wbtn" aria-label="Maximise" onClick={() => void win.toggleMaximize()}>
-          <Icon.Square size={13} />
-        </button>
-        <button type="button" className="wbtn wbtn--x" aria-label="Close" onClick={() => void win.close()}>
-          <Icon.Close size={15} />
-        </button>
-      </div>
-    </header>
-  );
-}
-
-function alpha(hex: string, a: number): string {
-  const v = hex.replace("#", "");
-  return `rgba(${parseInt(v.slice(0, 2), 16)}, ${parseInt(v.slice(2, 4), 16)}, ${parseInt(v.slice(4, 6), 16)}, ${a})`;
-}
-
-/** Black or white text, whichever keeps contrast on the accent. */
-function ink(hex: string): string {
-  const v = hex.replace("#", "");
-  const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
-  const l =
-    0.2126 * lin(parseInt(v.slice(0, 2), 16) / 255) +
-    0.7152 * lin(parseInt(v.slice(2, 4), 16) / 255) +
-    0.0722 * lin(parseInt(v.slice(4, 6), 16) / 255);
-  return l > 0.4 ? "#0d0a04" : "#ffffff";
 }

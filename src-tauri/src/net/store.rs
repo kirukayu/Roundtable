@@ -138,11 +138,10 @@ mod tests {
     }
 
     #[test]
-    fn every_pinned_trailer_points_at_the_cdn() {
-        for game in Game::ALL {
-            let url = game.trailer_url();
-            assert!(url.starts_with("https://cdn.cloudflare.steamstatic.com/"));
-            assert!(url.ends_with(".mp4"));
+    fn every_playable_title_has_cdn_art() {
+        for game in Game::ALL.into_iter().filter(|g| g.is_playable()) {
+            let cover = game.cover_url().expect("playable titles have covers");
+            assert!(cover.starts_with("https://cdn.cloudflare.steamstatic.com/"));
         }
     }
 }

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { open as pick } from "@tauri-apps/plugin-dialog";
 
 import { Icon } from "../../components/Icons";
 import { Blank, Card, Chip, Confirm, Modal, Option, useToast } from "../../components/ui";
@@ -51,13 +50,10 @@ export default function ModsPane({
   };
 
   const addArchive = async () => {
-    const picked = await pick({
-      title: "Select a mod archive",
-      filters: [{ name: "Mod archives", extensions: ["zip", "7z"] }],
-    });
-    if (typeof picked !== "string") return;
+    const picked = await api.pickFile("Select a mod archive", "zip,7z");
+    if (!picked) return;
     setBusy(true);
-    const added = await toast.run("Mod added", () => api.modsInstallArchive(gameId, picked));
+    const added = await toast.run("Mod added", () => api.modsInstall(gameId, picked));
     if (added) {
       await refresh();
       if (draft) {
@@ -71,10 +67,10 @@ export default function ModsPane({
   };
 
   const addFolder = async () => {
-    const picked = await pick({ directory: true, title: "Select a mod folder" });
-    if (typeof picked !== "string") return;
+    const picked = await api.pickFolder("Select a mod folder");
+    if (!picked) return;
     setBusy(true);
-    const added = await toast.run("Mod added", () => api.modsInstallFolder(gameId, picked));
+    const added = await toast.run("Mod added", () => api.modsInstall(gameId, picked));
     if (added) {
       await refresh();
       if (draft) {

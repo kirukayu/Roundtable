@@ -1,94 +1,94 @@
 /*
- * Roundtable — tokens.
+ * Roundtable.
  *
- * Near-black glass. Every surface is a translucent pane over a slow aurora that
- * takes its colours from whichever game is selected, so the shell genuinely looks
- * different per title rather than swapping one accent swatch.
+ * Monochrome. Black, charcoal, white and one silver. There is no colour token
+ * in this file and none anywhere else in the interface — whatever colour reaches
+ * the eye comes from the games' own artwork, and even that is desaturated until
+ * you hover it.
  *
- * The four aurora variables and the accent are rewritten at runtime; everything
- * else here is fixed.
+ * The reference points are cold and expensive: FromSoftware's own menus, Apple's
+ * restraint, Linear's typography. Nothing glows.
  */
 
 :root {
-  --void: #08090b;
-  --void-2: #0b0d10;
+  /* Ground. Four steps, each barely above the last. */
+  --b0: #050505;
+  --b1: #090909;
+  --b2: #101010;
+  --b3: #151515;
+  --b4: #1c1c1c;
 
-  /* Glass. Panels are barely-there white over the aurora, never solid fills. */
-  --glass: rgba(255, 255, 255, 0.045);
-  --glass-2: rgba(255, 255, 255, 0.07);
-  --glass-3: rgba(255, 255, 255, 0.1);
-  --edge: rgba(255, 255, 255, 0.08);
-  --edge-2: rgba(255, 255, 255, 0.14);
+  /* Hairlines. Almost never used; spacing does the separating. */
+  --line: rgba(255, 255, 255, 0.06);
+  --line-2: rgba(255, 255, 255, 0.1);
 
-  --text: #f4f5f7;
-  --text-2: #a7abb4;
-  --text-3: #6f747e;
-  --text-4: #464b54;
+  --w0: #ffffff;
+  --w1: #dadada;
+  --w2: #aaaaaa;
+  --w3: #6e6e6e;
+  --w4: #444444;
 
-  /* Set per game. Defaults are Elden Ring. */
-  --a1: #d8b25c;
-  --a2: #8a6a1e;
-  --accent: #d8b25c;
-  --accent-ink: #100c02;
-  --accent-soft: rgba(216, 178, 92, 0.16);
-  --accent-glow: rgba(216, 178, 92, 0.4);
+  /* The only accent, and it is silver. */
+  --silver: #d6d6d6;
 
-  --ok: #4ec98a;
-  --warn: #e0b355;
-  --bad: #e06a6a;
-  --ok-soft: rgba(78, 201, 138, 0.14);
-  --warn-soft: rgba(224, 179, 85, 0.14);
-  --bad-soft: rgba(224, 106, 106, 0.14);
+  /* Three states, kept desaturated so nothing reads as a gamer LED. */
+  --ok: #9fb4a4;
+  --warn: #c6bda3;
+  --bad: #c4a0a0;
 
-  --font: "Manrope", -apple-system, "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  /*
+   * Type. One family, mostly thin. Inter Tight is drawn tight enough to hold at
+   * display sizes without a separate headline face.
+   */
+  --font: "Inter Tight", "Inter", -apple-system, "Segoe UI Variable", "Segoe UI",
+    system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, monospace;
 
   --t-2xs: 10px;
   --t-xs: 11px;
   --t-sm: 13px;
-  --t-md: 14px;
-  --t-lg: 17px;
-  --t-xl: 22px;
-  --t-2xl: 30px;
-  --t-3xl: 44px;
+  --t-md: 15px;
+  --t-lg: 18px;
+  --t-xl: 24px;
+  --t-2xl: 34px;
+  --t-3xl: 52px;
+  --t-4xl: 76px;
+  --t-5xl: 108px;
 
+  /* Generous. Everything is allowed to breathe. */
   --s1: 4px;
   --s2: 8px;
   --s3: 12px;
-  --s4: 16px;
-  --s5: 24px;
-  --s6: 32px;
-  --s7: 48px;
-  --s8: 72px;
+  --s4: 20px;
+  --s5: 32px;
+  --s6: 48px;
+  --s7: 72px;
+  --s8: 112px;
+  --s9: 160px;
+  --s10: 220px;
 
-  --r-sm: 8px;
-  --r: 14px;
-  --r-lg: 20px;
-  --r-xl: 26px;
+  --r-sm: 6px;
+  --r: 12px;
+  --r-lg: 18px;
   --r-full: 999px;
 
-  --blur: 26px;
-  --blur-lg: 44px;
+  /* Soft and wide. Nothing hard-edged, nothing coloured. */
+  --sh-1: 0 2px 12px rgba(0, 0, 0, 0.5);
+  --sh-2: 0 16px 48px -12px rgba(0, 0, 0, 0.8);
+  --sh-3: 0 40px 120px -24px rgba(0, 0, 0, 0.95);
 
-  --sh: 0 4px 20px -6px rgba(0, 0, 0, 0.7);
-  --sh-lg: 0 20px 60px -16px rgba(0, 0, 0, 0.9);
-
-  --rail: 244px;
-  --bar: 44px;
-
-  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  /* Slow. Nothing in this interface is in a hurry. */
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
   --out: cubic-bezier(0.16, 1, 0.3, 1);
-  --spring: cubic-bezier(0.34, 1.4, 0.5, 1);
-  --fast: 140ms;
-  --mid: 260ms;
-  --slow: 560ms;
-  /* Long enough that recolouring reads as a dissolve between worlds. */
-  --shift: 1100ms;
+  --fast: 220ms;
+  --mid: 480ms;
+  --slow: 900ms;
+  --glacial: 1600ms;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :root { --fast: 1ms; --mid: 1ms; --slow: 1ms; --shift: 1ms; }
+  :root { --fast: 1ms; --mid: 1ms; --slow: 1ms; --glacial: 1ms; }
 }
 :root[data-reduce-motion="true"] {
-  --fast: 1ms; --mid: 1ms; --slow: 1ms; --shift: 1ms;
+  --fast: 1ms; --mid: 1ms; --slow: 1ms; --glacial: 1ms;
 }

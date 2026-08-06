@@ -1,19 +1,13 @@
-import { Icon } from "../components/Icons";
-import { Chip, Modal, Option } from "../components/ui";
+import { Modal, Option } from "../components/ui";
 import type { GameId, Settings } from "../lib/types";
-
-const ACCENTS: { id: string; label: string; swatch: string }[] = [
-  { id: "gold", label: "Gold", swatch: "#c9a45a" },
-  { id: "ember", label: "Ember", swatch: "#d97757" },
-  { id: "steel", label: "Steel", swatch: "#7d93b2" },
-  { id: "moss", label: "Moss", swatch: "#7fa878" },
-];
 
 /**
  * Settings as an overlay rather than a destination.
  *
- * Nothing here is part of playing a game, so it should never occupy a slot in the
- * navigation next to the library.
+ * Nothing in here is part of playing a game, so it never gets a slot in the
+ * navigation beside the catalogue. There is no theme picker: the interface is
+ * monochrome by design and offering to break that would be offering to make it
+ * worse.
  */
 export default function SettingsOverlay({
   settings,
@@ -28,7 +22,7 @@ export default function SettingsOverlay({
     <Modal title="Settings" onClose={onClose}>
       <div className="col">
         <section>
-          <div className="card__t" style={{ marginBottom: "var(--s2)" }}>
+          <div className="card__t" style={{ marginBottom: "var(--s3)" }}>
             Saves
           </div>
           <Option
@@ -42,7 +36,7 @@ export default function SettingsOverlay({
               <div className="opt__l">Automatic snapshots kept</div>
               <div className="opt__h">Manual ones are never pruned.</div>
             </div>
-            <div className="row" style={{ gap: "var(--s3)", width: 180 }}>
+            <div className="row" style={{ gap: "var(--s4)", width: 190 }}>
               <input
                 type="range"
                 className="rng"
@@ -53,7 +47,7 @@ export default function SettingsOverlay({
                 aria-label="Automatic snapshots kept"
                 onChange={(e) => void onPatch({ autoBackupKeep: Number(e.target.value) })}
               />
-              <span className="mono" style={{ width: 26, color: "var(--accent)" }}>
+              <span className="mono" style={{ width: 26, color: "var(--w1)" }}>
                 {settings.autoBackupKeep}
               </span>
             </div>
@@ -68,42 +62,12 @@ export default function SettingsOverlay({
         <hr className="hr" />
 
         <section>
-          <div className="card__t" style={{ marginBottom: "var(--s2)" }}>
-            Appearance
-          </div>
-          <div className="opt">
-            <div className="opt__t">
-              <div className="opt__l">Accent</div>
-              <div className="opt__h">Used for the Play button and current state.</div>
-            </div>
-            <div className="row" style={{ gap: "var(--s2)" }}>
-              {ACCENTS.map((accent) => (
-                <button
-                  key={accent.id}
-                  type="button"
-                  aria-label={accent.label}
-                  aria-pressed={settings.accent === accent.id}
-                  onClick={() => void onPatch({ accent: accent.id })}
-                  style={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: "var(--r-sm)",
-                    background: accent.swatch,
-                    border: "none",
-                    cursor: "pointer",
-                    outline:
-                      settings.accent === accent.id
-                        ? "2px solid var(--text)"
-                        : "2px solid transparent",
-                    outlineOffset: 2,
-                  }}
-                />
-              ))}
-            </div>
+          <div className="card__t" style={{ marginBottom: "var(--s3)" }}>
+            Interface
           </div>
           <Option
             label="Reduce motion"
-            help="Removes transitions and animated states."
+            help="Stills the fog and removes every transition."
             checked={settings.reduceMotion}
             onChange={(next) => void onPatch({ reduceMotion: next })}
           />
@@ -112,7 +76,7 @@ export default function SettingsOverlay({
         <hr className="hr" />
 
         <section>
-          <div className="card__t" style={{ marginBottom: "var(--s2)" }}>
+          <div className="card__t" style={{ marginBottom: "var(--s3)" }}>
             Integrations
           </div>
           <Option
@@ -121,7 +85,7 @@ export default function SettingsOverlay({
             checked={settings.discordPresence}
             onChange={(next) => void onPatch({ discordPresence: next })}
           />
-          <div className="fld" style={{ paddingTop: "var(--s3)" }}>
+          <div className="fld" style={{ paddingTop: "var(--s4)" }}>
             <label className="fld__l" htmlFor="nexus">
               Nexus Mods API key
             </label>
@@ -142,21 +106,21 @@ export default function SettingsOverlay({
         <hr className="hr" />
 
         <section>
-          <div className="card__t" style={{ marginBottom: "var(--s2)" }}>
+          <div className="card__t" style={{ marginBottom: "var(--s3)" }}>
             Advanced
           </div>
           <Option
             label="Deploy profiles as a junction"
-            help="Off by default. Only needed for older tools that require a literal mod folder next to the game."
+            help="Off by default. Only needed for older tools that require a literal mod folder beside the game."
             checked={settings.useJunctionDeploy}
             onChange={(next) => void onPatch({ useJunctionDeploy: next })}
           />
           <div className="opt">
             <div className="opt__t">
               <div className="opt__l">Download connections</div>
-              <div className="opt__h">Parallel ranges per download.</div>
+              <div className="opt__h">Parallel ranges per transfer.</div>
             </div>
-            <div className="row" style={{ gap: "var(--s3)", width: 180 }}>
+            <div className="row" style={{ gap: "var(--s4)", width: 190 }}>
               <input
                 type="range"
                 className="rng"
@@ -166,7 +130,7 @@ export default function SettingsOverlay({
                 aria-label="Download connections"
                 onChange={(e) => void onPatch({ downloadConnections: Number(e.target.value) })}
               />
-              <span className="mono" style={{ width: 26, color: "var(--accent)" }}>
+              <span className="mono" style={{ width: 26, color: "var(--w1)" }}>
                 {settings.downloadConnections}
               </span>
             </div>
@@ -179,6 +143,28 @@ export default function SettingsOverlay({
           />
         </section>
 
+        {settings.installations.length > 0 && (
+          <>
+            <hr className="hr" />
+            <section>
+              <div className="card__t" style={{ marginBottom: "var(--s3)" }}>
+                Known installations
+              </div>
+              <div className="rows">
+                {settings.installations.map((entry) => (
+                  <div key={`${entry.game}-${entry.root}`} className="rw">
+                    <div className="grow" style={{ minWidth: 0 }}>
+                      <div className="rw__t">{label(entry.game)}</div>
+                      <div className="rw__s mono truncate">{entry.root}</div>
+                    </div>
+                    {entry.isDefault && <span className="chip">Default</span>}
+                  </div>
+                ))}
+              </div>
+            </section>
+          </>
+        )}
+
         <hr className="hr" />
 
         <div className="between">
@@ -186,49 +172,31 @@ export default function SettingsOverlay({
             <div className="opt__l">Roundtable 0.1.0</div>
             <div className="opt__h">MIT licensed. No account, no telemetry.</div>
           </div>
-          <Chip tone="a">
-            <Icon.Shield size={11} />
-            Local only
-          </Chip>
         </div>
-
-        {settings.installations.length > 0 && (
-          <>
-            <hr className="hr" />
-            <div>
-              <div className="card__t" style={{ marginBottom: "var(--s2)" }}>
-                Known installations
-              </div>
-              <div className="rows">
-                {settings.installations.map((entry) => (
-                  <div key={`${entry.game}-${entry.root}`} className="rw">
-                    <div className="grow" style={{ minWidth: 0 }}>
-                      <div className="rw__t">{gameLabel(entry.game)}</div>
-                      <div className="rw__s mono truncate">{entry.root}</div>
-                    </div>
-                    {entry.isDefault && <Chip tone="a">default</Chip>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
       </div>
     </Modal>
   );
 }
 
-function gameLabel(id: GameId): string {
+function label(id: GameId): string {
   switch (id) {
     case "elden-ring":
       return "Elden Ring";
     case "nightreign":
       return "Nightreign";
+    case "dark-souls-remastered":
+      return "Dark Souls Remastered";
+    case "dark-souls2":
+      return "Dark Souls II";
     case "dark-souls3":
       return "Dark Souls III";
     case "sekiro":
       return "Sekiro";
     case "armored-core6":
       return "Armored Core VI";
+    case "bloodborne":
+      return "Bloodborne";
+    case "demons-souls":
+      return "Demon's Souls";
   }
 }

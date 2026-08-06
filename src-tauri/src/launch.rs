@@ -248,10 +248,15 @@ pub fn plan(input: &PlanInput<'_>) -> Result<LaunchPlan> {
                 if coop { " plus the co-op DLL" } else { "" }
             ));
 
+            let me3_id = install
+                .game
+                .me3_id()
+                .ok_or_else(|| Error::msg("me3 does not support this game"))?;
+
             let mut args = vec![
                 "launch".to_string(),
                 "--game".to_string(),
-                install.game.me3_id().to_string(),
+                me3_id.to_string(),
                 "--profile".to_string(),
                 profile_path.to_string_lossy().to_string(),
             ];

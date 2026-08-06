@@ -106,9 +106,13 @@ fn asset_key(game: Game) -> &'static str {
     match game {
         Game::EldenRing => "eldenring",
         Game::Nightreign => "nightreign",
+        Game::DarkSoulsRemastered => "darksouls",
+        Game::DarkSouls2 => "darksouls2",
         Game::DarkSouls3 => "darksouls3",
         Game::Sekiro => "sekiro",
         Game::ArmoredCore6 => "armoredcore6",
+        Game::Bloodborne => "bloodborne",
+        Game::DemonsSouls => "demonssouls",
     }
 }
 

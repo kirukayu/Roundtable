@@ -16,3 +16,9 @@ Thumbs.db
 *.log
 npm-debug.log*
 yarn-error.log*
+
+# Local tooling scratch, not part of the project.
+.claude-flow/
+.swarm/
+.claude/
+preview/

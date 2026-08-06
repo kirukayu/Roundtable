@@ -1,28 +1,32 @@
 export type GameId =
   | "elden-ring"
   | "nightreign"
+  | "dark-souls-remastered"
+  | "dark-souls2"
   | "dark-souls3"
   | "sekiro"
-  | "armored-core6";
+  | "armored-core6"
+  | "bloodborne"
+  | "demons-souls";
 
 export interface GameInfo {
   id: GameId;
   name: string;
   short: string;
   year: number;
+  /** One line of context shown under the title. */
+  note: string;
+  /** False for the console exclusives, which have no PC build to manage. */
+  playable: boolean;
   steamAppId: number;
   executable: string;
   saveFile: string;
   supportsSeamlessCoop: boolean;
   supportsModengine2: boolean;
-  coverUrl: string;
-  heroUrl: string;
-  logoUrl: string;
-  trailerUrl: string;
-  /** Hex colour lifted from the game's key art; recolours the whole shell. */
-  accent: string;
-  /** The two bloom colours of the aurora behind everything. */
-  aurora: [string, string];
+  supportsMe3: boolean;
+  coverUrl: string | null;
+  heroUrl: string | null;
+  logoUrl: string | null;
 }
 
 export type InstallKind = "steam" | "standalone" | "unknown";

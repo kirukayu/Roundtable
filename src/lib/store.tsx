@@ -71,22 +71,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     })();
   }, []);
 
-  // One poll for every title, so the sidebar and the Play button agree.
+  // A single call covers every title, so the rail and the Play button agree.
   useEffect(() => {
     if (games.length === 0) return;
     let cancelled = false;
     const poll = async () => {
-      for (const game of games) {
-        try {
-          if (await api.gameIsRunning(game.id)) {
-            if (!cancelled) setGameRunning(game.id);
-            return;
-          }
-        } catch {
-          /* the process list is best effort */
-        }
+      try {
+        const active = await api.runningGame();
+        if (!cancelled) setGameRunning(active);
+      } catch {
+        /* the process list is best effort */
       }
-      if (!cancelled) setGameRunning(null);
     };
     void poll();
     const timer = window.setInterval(poll, 5000);

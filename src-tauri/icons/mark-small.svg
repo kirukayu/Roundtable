@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!--
+    The same mark, cut down for small sizes.
+
+    The hairline inlay of the full version closes up below about 64 pixels and
+    reads as a smudge against the outer ring, so at these sizes there is one
+    ring, thicker, and a larger diamond.
+  -->
+  <defs>
+    <linearGradient id="plate" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0%" stop-color="#161616"/>
+      <stop offset="52%" stop-color="#0c0c0c"/>
+      <stop offset="100%" stop-color="#050505"/>
+    </linearGradient>
+
+    <linearGradient id="metal" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="52%" stop-color="#e2e2e2"/>
+      <stop offset="100%" stop-color="#a4a4a4"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1024" height="1024" rx="228" ry="228" fill="url(#plate)"/>
+  <rect x="6" y="6" width="1012" height="1012" rx="222" ry="222"
+        fill="none" stroke="#ffffff" stroke-opacity="0.13" stroke-width="12"/>
+
+  <circle cx="512" cy="512" r="292" fill="none" stroke="url(#metal)" stroke-width="70"/>
+  <path d="M512 388 L636 512 L512 636 L388 512 Z" fill="url(#metal)"/>
+</svg>

@@ -551,7 +551,6 @@ function ConvertModal({
                   gameId,
                   entry.path,
                   extension,
-                  undefined,
                   rebind ? Number(rebind) : undefined,
                 ),
               );

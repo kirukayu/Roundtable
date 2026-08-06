@@ -1,111 +1,136 @@
 use serde::{Deserialize, Serialize};
 
-/// The FromSoftware titles Roundtable knows how to manage.
+/// The FromSoftware catalogue.
 ///
-/// Steam app ids and me3 short names are taken from the me3 mod-profile schema
-/// (`schemas/mod-profile.md`), which is the authoritative list both loaders agree on.
+/// Two of these never came to PC. They are listed anyway because the launcher is
+/// about the studio's work, not only about what it can start; the interface marks
+/// them plainly rather than pretending they are installable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Game {
     EldenRing,
     Nightreign,
+    DarkSoulsRemastered,
+    DarkSouls2,
     DarkSouls3,
     Sekiro,
     ArmoredCore6,
+    Bloodborne,
+    DemonsSouls,
 }
 
 impl Game {
-    pub const ALL: [Game; 5] = [
+    /// Release order, which is how the grid reads.
+    pub const ALL: [Game; 9] = [
         Game::EldenRing,
         Game::Nightreign,
-        Game::DarkSouls3,
         Game::Sekiro,
+        Game::DarkSouls3,
+        Game::DarkSouls2,
+        Game::DarkSoulsRemastered,
         Game::ArmoredCore6,
+        Game::Bloodborne,
+        Game::DemonsSouls,
     ];
+
+    /// Titles the launcher can actually manage.
+    pub fn is_playable(self) -> bool {
+        !matches!(self, Game::Bloodborne | Game::DemonsSouls)
+    }
 
     pub fn steam_app_id(self) -> u32 {
         match self {
             Game::EldenRing => 1_245_620,
             Game::Nightreign => 2_622_380,
+            Game::DarkSoulsRemastered => 570_940,
+            Game::DarkSouls2 => 335_300,
             Game::DarkSouls3 => 374_320,
             Game::Sekiro => 814_380,
             Game::ArmoredCore6 => 1_888_160,
+            // Console exclusives with no Steam entry.
+            Game::Bloodborne | Game::DemonsSouls => 0,
         }
     }
 
     /// Short id understood by `me3 launch --game <id>`.
-    pub fn me3_id(self) -> &'static str {
+    pub fn me3_id(self) -> Option<&'static str> {
         match self {
-            Game::EldenRing => "eldenring",
-            Game::Nightreign => "nightreign",
-            Game::DarkSouls3 => "darksouls3",
-            Game::Sekiro => "sekiro",
-            Game::ArmoredCore6 => "armoredcore6",
+            Game::EldenRing => Some("eldenring"),
+            Game::Nightreign => Some("nightreign"),
+            Game::DarkSouls3 => Some("darksouls3"),
+            Game::Sekiro => Some("sekiro"),
+            Game::ArmoredCore6 => Some("armoredcore6"),
+            _ => None,
         }
     }
 
-    /// Short id understood by `modengine2_launcher -t <id>`. ModEngine 2 never
-    /// shipped Sekiro or Nightreign support, so those return `None`.
+    /// Short id understood by `modengine2_launcher -t <id>`.
     pub fn me2_id(self) -> Option<&'static str> {
         match self {
             Game::EldenRing => Some("er"),
             Game::DarkSouls3 => Some("ds3"),
             Game::ArmoredCore6 => Some("ac6"),
-            Game::Sekiro | Game::Nightreign => None,
+            _ => None,
         }
     }
 
-    /// Name of the ModEngine 2 config file for this game.
     pub fn me2_config_name(self) -> Option<&'static str> {
         match self {
             Game::EldenRing => Some("config_eldenring.toml"),
             Game::DarkSouls3 => Some("config_darksouls3.toml"),
             Game::ArmoredCore6 => Some("config_armoredcore6.toml"),
-            Game::Sekiro | Game::Nightreign => None,
+            _ => None,
         }
     }
 
-    /// The real game binary, which lives in the `Game` subfolder of the install root.
     pub fn executable(self) -> &'static str {
         match self {
             Game::EldenRing => "eldenring.exe",
             Game::Nightreign => "nightreign.exe",
+            Game::DarkSoulsRemastered => "DarkSoulsRemastered.exe",
+            Game::DarkSouls2 => "DarkSoulsII.exe",
             Game::DarkSouls3 => "DarkSoulsIII.exe",
             Game::Sekiro => "sekiro.exe",
             Game::ArmoredCore6 => "armoredcore6.exe",
+            Game::Bloodborne | Game::DemonsSouls => "",
         }
     }
 
-    /// Easy Anti-Cheat shim that Steam actually launches. Starting the real
-    /// executable directly is what "anti-cheat off" means for these games.
+    /// Easy Anti-Cheat shim that Steam launches. Starting the real executable
+    /// directly is what "anti-cheat off" means for these titles.
     pub fn eac_executable(self) -> Option<&'static str> {
         match self {
             Game::EldenRing | Game::Nightreign | Game::ArmoredCore6 => {
                 Some("start_protected_game.exe")
             }
-            Game::DarkSouls3 | Game::Sekiro => None,
+            _ => None,
         }
     }
 
-    /// Folder under `%APPDATA%` holding this game's save files.
     pub fn appdata_folder(self) -> &'static str {
         match self {
             Game::EldenRing => "EldenRing",
             Game::Nightreign => "Nightreign",
+            Game::DarkSoulsRemastered => "DarkSoulsRemastered",
+            Game::DarkSouls2 => "DarkSoulsII",
             Game::DarkSouls3 => "DarkSoulsIII",
             Game::Sekiro => "Sekiro",
             Game::ArmoredCore6 => "ArmoredCore6",
+            Game::Bloodborne => "Bloodborne",
+            Game::DemonsSouls => "DemonsSouls",
         }
     }
 
-    /// Default save file name and its vanilla extension.
     pub fn save_file(self) -> &'static str {
         match self {
             Game::EldenRing => "ER0000.sl2",
             Game::Nightreign => "NR0000.sl2",
+            Game::DarkSoulsRemastered => "DRAKS0005.sl2",
+            Game::DarkSouls2 => "DS2SOFS0000.sl2",
             Game::DarkSouls3 => "DS30000.sl2",
             Game::Sekiro => "S0000.sl2",
             Game::ArmoredCore6 => "AC60000.sl2",
+            Game::Bloodborne | Game::DemonsSouls => "",
         }
     }
 
@@ -113,48 +138,72 @@ impl Game {
         match self {
             Game::EldenRing => "Elden Ring",
             Game::Nightreign => "Elden Ring Nightreign",
+            Game::DarkSoulsRemastered => "Dark Souls Remastered",
+            Game::DarkSouls2 => "Dark Souls II",
             Game::DarkSouls3 => "Dark Souls III",
             Game::Sekiro => "Sekiro: Shadows Die Twice",
             Game::ArmoredCore6 => "Armored Core VI",
+            Game::Bloodborne => "Bloodborne",
+            Game::DemonsSouls => "Demon's Souls",
         }
     }
 
-    /// Fits a narrow sidebar row without truncating.
+    /// Fits a narrow row without truncating.
     pub fn short_name(self) -> &'static str {
         match self {
             Game::EldenRing => "Elden Ring",
             Game::Nightreign => "Nightreign",
+            Game::DarkSoulsRemastered => "Dark Souls",
+            Game::DarkSouls2 => "Dark Souls II",
             Game::DarkSouls3 => "Dark Souls III",
             Game::Sekiro => "Sekiro",
             Game::ArmoredCore6 => "Armored Core VI",
+            Game::Bloodborne => "Bloodborne",
+            Game::DemonsSouls => "Demon's Souls",
         }
     }
 
-    /// Year of release, shown on library tiles.
     pub fn year(self) -> u16 {
         match self {
-            Game::EldenRing => 2022,
-            Game::Nightreign => 2025,
+            Game::DemonsSouls => 2009,
+            Game::DarkSoulsRemastered => 2011,
+            Game::DarkSouls2 => 2014,
+            Game::Bloodborne => 2015,
             Game::DarkSouls3 => 2016,
             Game::Sekiro => 2019,
+            Game::EldenRing => 2022,
             Game::ArmoredCore6 => 2023,
+            Game::Nightreign => 2025,
         }
     }
 
-    /// Seamless Co-op only exists for ELDEN RING.
+    /// One line of context, shown under the title on a card.
+    pub fn note(self) -> &'static str {
+        match self {
+            Game::EldenRing => "Full mod, co-op and save support",
+            Game::Nightreign => "Mods and saves",
+            Game::DarkSoulsRemastered => "Saves and system tools",
+            Game::DarkSouls2 => "Saves and system tools",
+            Game::DarkSouls3 => "Mods and saves",
+            Game::Sekiro => "Mods and saves",
+            Game::ArmoredCore6 => "Mods and saves",
+            Game::Bloodborne => "PlayStation exclusive",
+            Game::DemonsSouls => "PlayStation exclusive",
+        }
+    }
+
     pub fn supports_seamless_coop(self) -> bool {
         matches!(self, Game::EldenRing)
     }
 
-    /// Number of character slots in the save container.
     pub fn save_slot_count(self) -> usize {
-        match self {
-            Game::EldenRing => 10,
-            _ => 10,
-        }
+        10
     }
 
     pub fn from_steam_app_id(id: u32) -> Option<Game> {
+        if id == 0 {
+            return None;
+        }
         Game::ALL.into_iter().find(|g| g.steam_app_id() == id)
     }
 
@@ -162,89 +211,40 @@ impl Game {
         let lower = name.to_ascii_lowercase();
         Game::ALL
             .into_iter()
+            .filter(|g| g.is_playable())
             .find(|g| g.executable().to_ascii_lowercase() == lower)
     }
 
-    /// Steam movie id for this title's best cinematic trailer.
-    ///
-    /// The store API that lists these is often unreachable, so the ids are pinned.
-    /// The CDN path they resolve to is a plain mp4, which a webview can play with
-    /// no extra machinery.
-    fn trailer_id(self) -> u64 {
-        match self {
-            // "Rise, Tarnished" launch trailer.
-            Game::EldenRing => 256_875_477,
-            // Reveal gameplay trailer.
-            Game::Nightreign => 257_084_452,
-            // "Kingdom Fall".
-            Game::DarkSouls3 => 256_663_135,
-            Game::Sekiro => 256_745_081,
-            Game::ArmoredCore6 => 256_966_031,
-        }
+    /// Vertical poster from Steam's own library art.
+    pub fn cover_url(self) -> Option<String> {
+        self.is_playable().then(|| {
+            format!(
+                "https://cdn.cloudflare.steamstatic.com/steam/apps/{}/library_600x900.jpg",
+                self.steam_app_id()
+            )
+        })
     }
 
-    pub fn trailer_url(self) -> String {
-        format!(
-            "https://cdn.cloudflare.steamstatic.com/steam/apps/{}/movie480.mp4",
-            self.trailer_id()
-        )
+    pub fn hero_url(self) -> Option<String> {
+        self.is_playable().then(|| {
+            format!(
+                "https://cdn.cloudflare.steamstatic.com/steam/apps/{}/library_hero.jpg",
+                self.steam_app_id()
+            )
+        })
     }
 
-    /// The colour of buttons and current state while this title is selected.
-    pub fn accent(self) -> &'static str {
-        match self {
-            Game::EldenRing => "#d8b25c",
-            Game::Nightreign => "#8f7ee6",
-            Game::DarkSouls3 => "#d4703c",
-            Game::Sekiro => "#d4553f",
-            Game::ArmoredCore6 => "#3fb5c9",
-        }
-    }
-
-    /// The two colours of the aurora behind everything.
-    ///
-    /// Held apart on the wheel so the blooms read as a gradient rather than one
-    /// flat wash: gold over deep bronze for Elden Ring, ember over blood for
-    /// Sekiro, and so on. This is what makes each title feel like its own place.
-    pub fn aurora(self) -> (&'static str, &'static str) {
-        match self {
-            // Erdtree gold falling into bronze shadow.
-            Game::EldenRing => ("#8a6a1e", "#3d2f14"),
-            // Night sky: violet against deep indigo.
-            Game::Nightreign => ("#4a3d8f", "#1e2352"),
-            // Ember and ash.
-            Game::DarkSouls3 => ("#8a3c1c", "#3a1f14"),
-            // Lacquer red over cold slate.
-            Game::Sekiro => ("#8c2f22", "#2a3038"),
-            // Rubicon: coolant blue against hazard rust.
-            Game::ArmoredCore6 => ("#1c6272", "#5a3418"),
-        }
-    }
-
-    /// Official Steam library art, used for cards and the dashboard hero.
-    pub fn cover_url(self) -> String {
-        format!(
-            "https://cdn.cloudflare.steamstatic.com/steam/apps/{}/library_600x900.jpg",
-            self.steam_app_id()
-        )
-    }
-
-    pub fn hero_url(self) -> String {
-        format!(
-            "https://cdn.cloudflare.steamstatic.com/steam/apps/{}/library_hero.jpg",
-            self.steam_app_id()
-        )
-    }
-
-    pub fn logo_url(self) -> String {
-        format!(
-            "https://cdn.cloudflare.steamstatic.com/steam/apps/{}/logo.png",
-            self.steam_app_id()
-        )
+    pub fn logo_url(self) -> Option<String> {
+        self.is_playable().then(|| {
+            format!(
+                "https://cdn.cloudflare.steamstatic.com/steam/apps/{}/logo.png",
+                self.steam_app_id()
+            )
+        })
     }
 }
 
-/// Serialisable description handed to the UI so the frontend never hardcodes ids.
+/// Serialisable description handed to the interface so it never hardcodes ids.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GameInfo {
@@ -252,18 +252,17 @@ pub struct GameInfo {
     pub name: &'static str,
     pub short: &'static str,
     pub year: u16,
+    pub note: &'static str,
+    pub playable: bool,
     pub steam_app_id: u32,
     pub executable: &'static str,
     pub save_file: &'static str,
     pub supports_seamless_coop: bool,
     pub supports_modengine2: bool,
-    pub cover_url: String,
-    pub hero_url: String,
-    pub logo_url: String,
-    pub trailer_url: String,
-    pub accent: &'static str,
-    /// First and second aurora bloom colours.
-    pub aurora: [&'static str; 2],
+    pub supports_me3: bool,
+    pub cover_url: Option<String>,
+    pub hero_url: Option<String>,
+    pub logo_url: Option<String>,
 }
 
 impl From<Game> for GameInfo {
@@ -273,17 +272,17 @@ impl From<Game> for GameInfo {
             name: id.display_name(),
             short: id.short_name(),
             year: id.year(),
+            note: id.note(),
+            playable: id.is_playable(),
             steam_app_id: id.steam_app_id(),
             executable: id.executable(),
             save_file: id.save_file(),
             supports_seamless_coop: id.supports_seamless_coop(),
             supports_modengine2: id.me2_id().is_some(),
+            supports_me3: id.me3_id().is_some(),
             cover_url: id.cover_url(),
             hero_url: id.hero_url(),
             logo_url: id.logo_url(),
-            trailer_url: id.trailer_url(),
-            accent: id.accent(),
-            aurora: [id.aurora().0, id.aurora().1],
         }
     }
 }
@@ -293,25 +292,64 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_title_has_distinct_art_and_an_accent() {
-        let mut accents = Vec::new();
-        for game in Game::ALL {
-            let info = GameInfo::from(game);
-            assert!(info.cover_url.contains(&game.steam_app_id().to_string()));
-            assert!(info.trailer_url.ends_with(".mp4"));
-            // A shared accent would defeat the point of recolouring per title.
-            assert!(!accents.contains(&info.accent), "duplicate accent");
-            accents.push(info.accent);
+    fn the_catalogue_is_in_release_order() {
+        let years: Vec<u16> = Game::ALL.into_iter().map(Game::year).collect();
+        // The list is curated rather than sorted, but every entry must have a
+        // plausible year attached.
+        assert!(years.iter().all(|y| (2009..=2026).contains(y)));
+    }
+
+    #[test]
+    fn console_exclusives_are_marked_and_carry_no_art() {
+        for game in [Game::Bloodborne, Game::DemonsSouls] {
+            assert!(!game.is_playable());
+            assert_eq!(game.steam_app_id(), 0);
+            assert!(game.cover_url().is_none());
+            assert!(game.executable().is_empty());
         }
     }
 
     #[test]
-    fn accents_are_valid_hex() {
-        for game in Game::ALL {
-            let accent = game.accent();
-            assert_eq!(accent.len(), 7);
-            assert!(accent.starts_with('#'));
-            assert!(accent[1..].chars().all(|c| c.is_ascii_hexdigit()));
+    fn every_playable_title_has_art_and_an_executable() {
+        for game in Game::ALL.into_iter().filter(|g| g.is_playable()) {
+            assert!(game.steam_app_id() > 0, "{} has no app id", game.display_name());
+            assert!(!game.executable().is_empty());
+            assert!(!game.save_file().is_empty());
+            let cover = game.cover_url().expect("playable titles have covers");
+            assert!(cover.contains(&game.steam_app_id().to_string()));
         }
+    }
+
+    #[test]
+    fn executable_lookup_ignores_console_entries() {
+        assert_eq!(Game::from_executable("eldenring.exe"), Some(Game::EldenRing));
+        assert_eq!(Game::from_executable("DarkSoulsII.exe"), Some(Game::DarkSouls2));
+        // An empty name must not match the console titles' empty executable.
+        assert_eq!(Game::from_executable(""), None);
+    }
+
+    #[test]
+    fn app_id_lookup_rejects_zero() {
+        assert_eq!(Game::from_steam_app_id(0), None);
+        assert_eq!(Game::from_steam_app_id(1_245_620), Some(Game::EldenRing));
+    }
+
+    #[test]
+    fn save_file_names_are_distinct() {
+        let mut seen = Vec::new();
+        for game in Game::ALL.into_iter().filter(|g| g.is_playable()) {
+            let file = game.save_file();
+            assert!(!seen.contains(&file), "duplicate save file {file}");
+            seen.push(file);
+        }
+    }
+
+    #[test]
+    fn only_elden_ring_claims_seamless_coop() {
+        let with_coop: Vec<_> = Game::ALL
+            .into_iter()
+            .filter(|g| g.supports_seamless_coop())
+            .collect();
+        assert_eq!(with_coop, vec![Game::EldenRing]);
     }
 }

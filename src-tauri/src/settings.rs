@@ -57,8 +57,8 @@ impl Default for Settings {
             discord_presence: false,
             auto_backup_on_launch: true,
             auto_backup_keep: 20,
-            theme: "gilded-dark".into(),
-            accent: "erdtree".into(),
+            theme: "mono".into(),
+            accent: "silver".into(),
             ui_scale: 1.0,
             reduce_motion: false,
             language: "en".into(),
@@ -166,7 +166,8 @@ mod tests {
     #[test]
     fn a_missing_file_yields_defaults_rather_than_an_error() {
         let loaded = Settings::load(Path::new("Z:\\nowhere-at-all"));
-        assert_eq!(loaded.theme, "gilded-dark");
+        assert_eq!(loaded.theme, Settings::default().theme);
+        assert!(!loaded.reduce_motion, "motion is on unless it is turned off");
     }
 
     #[test]

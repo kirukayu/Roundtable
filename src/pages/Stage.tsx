@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { open as pickFolder } from "@tauri-apps/plugin-dialog";
+import { motion } from "motion/react";
+import { useCallback, useEffect, useState } from "react";
 
 import { Icon } from "../components/Icons";
+import { EASE } from "../components/Motion";
 import { Blank, Card, Chip, Skeleton, useToast } from "../components/ui";
 import { api } from "../lib/ipc";
 import { useApp } from "../lib/store";
@@ -15,7 +16,14 @@ import SystemPane from "./panes/SystemPane";
 
 type Pane = "play" | "mods" | "saves" | "coop" | "system";
 
-export default function Stage({ game }: { game: GameInfo }) {
+/**
+ * One game, in full.
+ *
+ * The banner is the game's own key art, drained of colour so the type stays the
+ * loudest thing on screen. Everything the launcher can do to that game lives in
+ * the tabs beneath it.
+ */
+export default function Stage({ game, onBack }: { game: GameInfo; onBack: () => void }) {
   const { profiles, settings, patchSettings, gameRunning, refreshProfiles, refreshInstalled } =
     useApp();
   const toast = useToast();
@@ -67,8 +75,8 @@ export default function Stage({ game }: { game: GameInfo }) {
   }, [game.id, install, active]);
 
   const locate = async () => {
-    const picked = await pickFolder({ directory: true, title: `Where is ${game.name}?` });
-    if (typeof picked !== "string") return;
+    const picked = await api.pickFolder(`Where is ${game.name}?`);
+    if (!picked) return;
     const added = await toast.run(`${game.name} is set up`, () =>
       api.installsRemember(game.id, picked, true),
     );
@@ -83,7 +91,7 @@ export default function Stage({ game }: { game: GameInfo }) {
     try {
       const results = await api.installsDiscover(game.id);
       if (results.length === 0) {
-        toast.info("Not found automatically", "Use Locate to point at the folder.");
+        toast.info("Not found automatically", "Point the launcher at the folder instead.");
         return;
       }
       await api.installsRemember(game.id, results[0].root, true);
@@ -125,60 +133,155 @@ export default function Stage({ game }: { game: GameInfo }) {
 
   const blocked = prepared?.plan.notices.some((n) => n.severity === "blocker") ?? false;
 
-  const panes: { id: Pane; label: string; glyph: (p: { size?: number }) => React.ReactNode; n?: number }[] =
-    [
-      { id: "play", label: "Play", glyph: Icon.Play },
-      { id: "mods", label: "Mods", glyph: Icon.Layers, n: modCount || undefined },
-      { id: "saves", label: "Saves", glyph: Icon.Save },
-      ...(game.supportsSeamlessCoop
-        ? [{ id: "coop" as Pane, label: "Co-op", glyph: Icon.Users }]
-        : []),
-      { id: "system", label: "System", glyph: Icon.Tools },
-    ];
+  const panes: { id: Pane; label: string }[] = [
+    { id: "play", label: "Play" },
+    { id: "mods", label: "Mods" },
+    { id: "saves", label: "Saves" },
+    ...(game.supportsSeamlessCoop ? [{ id: "coop" as Pane, label: "Co-op" }] : []),
+    { id: "system", label: "System" },
+  ];
 
   return (
-    <div className="scene">
-      <Presentation
-        game={game}
-        running={running}
-        install={install}
-        eac={eac}
-        loaders={loaders}
-        profileName={active?.name}
-        profiles={gameProfiles}
-        activeId={active?.id}
-        onPickProfile={(id) => void patchSettings({ activeProfile: id })}
-        canPlay={Boolean(install && active && !blocked && !running && !busy)}
-        busy={busy}
-        onPlay={play}
-        onLocate={locate}
-        onDetect={detect}
-        onCreateProfile={createProfile}
-      />
+    <div className="detail">
+      <section className="detail__banner">
+        {game.heroUrl && (
+          // Shares its identity with the cover on the shelf, so arriving here
+          // is the poster expanding rather than a new page appearing.
+          <motion.div
+            layoutId={`art-${game.id}`}
+            className="detail__art"
+            style={{ backgroundImage: `url(${game.heroUrl})` }}
+          />
+        )}
+        <div className="detail__veil" />
+
+        <button type="button" className="btn btn--ghost btn--sm detail__back" onClick={onBack}>
+          <Icon.Back size={14} />
+          Catalogue
+        </button>
+
+        <motion.div
+          className="detail__body"
+          initial={{ opacity: 0, y: 26, filter: "blur(8px)" }}
+          animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+          transition={{ duration: 1.1, ease: EASE, delay: 0.34 }}
+        >
+          <h1 className="detail__title">{game.name}</h1>
+
+          <div className="detail__facts">
+            <span className="fact">
+              Released
+              <strong>{game.year}</strong>
+            </span>
+            <span className="fact">
+              Status
+              <strong>{running ? "Running" : install ? "Installed" : "Not located"}</strong>
+            </span>
+            {install?.version && (
+              <span className="fact">
+                Build
+                <strong>{install.version}</strong>
+              </span>
+            )}
+            {install && (
+              <span className="fact">
+                Source
+                <strong>
+                  {install.kind === "steam"
+                    ? "Steam"
+                    : install.kind === "standalone"
+                      ? "Standalone"
+                      : "Unrecognised"}
+                </strong>
+              </span>
+            )}
+            {active && (
+              <span className="fact">
+                Profile
+                <strong>{active.name}</strong>
+              </span>
+            )}
+          </div>
+
+          <div className="detail__act row wrap" style={{ gap: "var(--s3)" }}>
+            {!install ? (
+              <>
+                <button
+                  type="button"
+                  className="btn btn--solid btn--lg"
+                  onClick={detect}
+                  disabled={busy}
+                >
+                  {busy ? <span className="spin" /> : null}
+                  Detect
+                </button>
+                <button type="button" className="btn btn--lg" onClick={locate}>
+                  Locate manually
+                </button>
+              </>
+            ) : !active ? (
+              <button type="button" className="btn btn--solid btn--lg" onClick={createProfile}>
+                Create a profile
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="btn btn--solid btn--lg"
+                  onClick={play}
+                  disabled={busy || running || blocked}
+                >
+                  {busy ? <span className="spin" /> : null}
+                  {running ? "Running" : busy ? "Starting" : "Play"}
+                </button>
+                {gameProfiles.length > 1 && (
+                  <select
+                    className="sel2"
+                    style={{ width: 220, height: 56, borderRadius: "var(--r-full)" }}
+                    value={active.id}
+                    aria-label="Profile"
+                    onChange={(event) =>
+                      void patchSettings({ activeProfile: event.target.value })
+                    }
+                  >
+                    {gameProfiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </>
+            )}
+
+            {eac?.state === "bypassed" && <Chip tone="bad">Anti-cheat off</Chip>}
+            {install?.hasSeamlessCoop && <Chip>Seamless Co-op</Chip>}
+            {loaders.map((l) => (
+              <Chip key={l.executable}>{l.kind === "me3" ? "me3" : "ModEngine 2"}</Chip>
+            ))}
+          </div>
+        </motion.div>
+      </section>
 
       {install && (
-        <div className="segs">
-          {panes.map((entry) => {
-            const Glyph = entry.glyph;
-            return (
-              <button
-                key={entry.id}
-                type="button"
-                role="tab"
-                className="seg"
-                aria-selected={pane === entry.id}
-                onClick={() => setPane(entry.id)}
-              >
-                <Glyph size={14} />
-                {entry.label}
-                {entry.n !== undefined && <span className="seg__n">{entry.n}</span>}
-              </button>
-            );
-          })}
+        <div className="tabs">
+          {panes.map((entry) => (
+            <button
+              key={entry.id}
+              type="button"
+              role="tab"
+              className="tab"
+              aria-selected={pane === entry.id}
+              onClick={() => setPane(entry.id)}
+            >
+              {entry.label}
+              {entry.id === "mods" && modCount > 0 ? ` (${modCount})` : ""}
+            </button>
+          ))}
         </div>
       )}
 
-      <div className="">
+      <div className="pane">
         {loading ? (
           <div className="g2">
             <Card><Skeleton variant="line" count={4} /></Card>
@@ -188,23 +291,26 @@ export default function Stage({ game }: { game: GameInfo }) {
           <Card>
             <Blank
               icon={Icon.Folder}
-              title={`${game.name} is not set up`}
+              title={`${game.name} has not been located`}
               action={
-                <div className="row" style={{ gap: "var(--s2)" }}>
-                  <button type="button" className="btn btn--a" onClick={detect} disabled={busy}>
-                    {busy ? <span className="spin" /> : <Icon.Search size={15} />}
+                <div className="row" style={{ gap: "var(--s3)" }}>
+                  <button
+                    type="button"
+                    className="btn btn--solid"
+                    onClick={detect}
+                    disabled={busy}
+                  >
                     Detect automatically
                   </button>
                   <button type="button" className="btn" onClick={locate}>
-                    <Icon.Folder size={15} />
-                    Choose folder
+                    Choose the folder
                   </button>
                 </div>
               }
             >
-              Roundtable looks through Steam libraries and the folders standalone copies
-              usually land in. If that misses, point it at the folder containing{" "}
-              <span className="mono">Game\{game.executable}</span>.
+              Roundtable reads the Steam registry and the folders standalone copies usually
+              land in. If that misses, point it at the folder holding{" "}
+              <span className="mono">{game.executable}</span>.
             </Blank>
           </Card>
         ) : (
@@ -248,7 +354,7 @@ export default function Stage({ game }: { game: GameInfo }) {
                 onForget={async () => {
                   await api.installsForget(game.id, install.root);
                   await refreshInstalled();
-                  await load();
+                  onBack();
                 }}
               />
             )}
@@ -256,190 +362,5 @@ export default function Stage({ game }: { game: GameInfo }) {
         )}
       </div>
     </div>
-  );
-}
-
-/**
- * The trailer plays behind the title, muted and looping, with the still image
- * underneath so nothing is ever blank. Sound is off by default and remembered
- * only for the session; a launcher that makes noise unprompted is a bad neighbour.
- */
-function Presentation({
-  game,
-  running,
-  install,
-  eac,
-  loaders,
-  profileName,
-  profiles,
-  activeId,
-  onPickProfile,
-  canPlay,
-  busy,
-  onPlay,
-  onLocate,
-  onDetect,
-  onCreateProfile,
-}: {
-  game: GameInfo;
-  running: boolean;
-  install: Installation | null;
-  eac: EacStatus | null;
-  loaders: LoaderInstall[];
-  profileName?: string;
-  profiles: import("../lib/types").Profile[];
-  activeId?: string;
-  onPickProfile: (id: string) => void;
-  canPlay: boolean;
-  busy: boolean;
-  onPlay: () => void;
-  onLocate: () => void;
-  onDetect: () => void;
-  onCreateProfile: () => void;
-}) {
-  const video = useRef<HTMLVideoElement>(null);
-  const [playing, setPlaying] = useState(false);
-  const [muted, setMuted] = useState(true);
-  const [logoOk, setLogoOk] = useState(true);
-
-  useEffect(() => {
-    setPlaying(false);
-    setLogoOk(true);
-  }, [game.id]);
-
-  useEffect(() => {
-    const element = video.current;
-    if (!element) return;
-    element.muted = muted;
-  }, [muted]);
-
-  return (
-    <section className="pres">
-      <div className="pres__m">
-        <img
-          className="pres__still"
-          src={game.heroUrl}
-          alt=""
-          style={{ opacity: playing ? 0 : 1 }}
-        />
-        <video
-          ref={video}
-          className="pres__vid"
-          data-on={playing}
-          src={game.trailerUrl}
-          poster={game.heroUrl}
-          muted
-          loop
-          playsInline
-          preload="auto"
-          onCanPlay={(event) => {
-            const element = event.currentTarget;
-            element.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
-          }}
-          onError={() => setPlaying(false)}
-        />
-      </div>
-      <div className="pres__veil" />
-
-      {playing && (
-        <button
-          type="button"
-          className="btn btn--g btn--i pres__mute"
-          aria-label={muted ? "Unmute trailer" : "Mute trailer"}
-          onClick={() => setMuted((m) => !m)}
-          style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(8px)" }}
-        >
-          {muted ? <Icon.Muted size={16} /> : <Icon.Sound size={16} />}
-        </button>
-      )}
-
-      <div className="pres__in">
-        <div className="grow">
-          {logoOk ? (
-            <img
-              className="pres__logo"
-              src={game.logoUrl}
-              alt={game.name}
-              onError={() => setLogoOk(false)}
-            />
-          ) : (
-            <h1 className="pres__name">{game.name}</h1>
-          )}
-
-          <div className="row wrap pres__meta" style={{ gap: "var(--s2)", marginTop: "var(--s4)" }}>
-            {running ? (
-              <Chip tone="ok">
-                <span className="dot beat" />
-                Running
-              </Chip>
-            ) : install ? (
-              <Chip tone="a">
-                {install.kind === "steam"
-                  ? "Steam"
-                  : install.kind === "standalone"
-                    ? "Standalone"
-                    : "Installed"}
-              </Chip>
-            ) : (
-              <Chip tone="warn">Not set up</Chip>
-            )}
-            {install?.version && <Chip>{install.version}</Chip>}
-            {install?.hasSeamlessCoop && <Chip>Seamless Co-op</Chip>}
-            {loaders.map((l) => (
-              <Chip key={l.executable}>{l.kind === "me3" ? "me3" : "ModEngine 2"}</Chip>
-            ))}
-            {eac?.state === "bypassed" && <Chip tone="bad">Anti-cheat off</Chip>}
-          </div>
-
-          <div className="row wrap pres__cta" style={{ gap: "var(--s3)", marginTop: "var(--s5)" }}>
-            {!install ? (
-              <>
-                <button type="button" className="play" onClick={onDetect} disabled={busy}>
-                  {busy ? <span className="spin" /> : <Icon.Search size={18} />}
-                  Detect
-                </button>
-                <button type="button" className="btn" style={{ height: 54, padding: "0 var(--s5)" }} onClick={onLocate}>
-                  <Icon.Folder size={16} />
-                  Locate
-                </button>
-              </>
-            ) : !profileName ? (
-              <button type="button" className="play" onClick={onCreateProfile}>
-                <Icon.Plus size={18} />
-                Create a profile
-              </button>
-            ) : (
-              <>
-                <button type="button" className="play" onClick={onPlay} disabled={!canPlay}>
-                  {busy ? <span className="spin" /> : <Icon.Play size={18} />}
-                  {running ? "Running" : busy ? "Starting" : "Play"}
-                </button>
-                {profiles.length > 1 && (
-                  <select
-                    className="sel2"
-                    style={{ width: 210, height: 54, borderRadius: "var(--r)" }}
-                    value={activeId}
-                    aria-label="Profile"
-                    onChange={(event) => onPickProfile(event.target.value)}
-                  >
-                    {profiles.map((profile) => (
-                      <option key={profile.id} value={profile.id}>
-                        {profile.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                {profiles.length === 1 && (
-                  <span className="chip chip--dark" style={{ height: 30 }}>
-                    <Icon.Layers size={12} />
-                    {profileName}
-                  </span>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-    </section>
   );
 }
