@@ -8,7 +8,11 @@
 
 Windows · no account · no telemetry · MIT
 
-<img src="docs/media/hero.png" width="880" alt="The Roundtable catalogue">
+[![Release](https://img.shields.io/github/v/release/kirukayu/Roundtable?style=flat-square&labelColor=0d0d0d&color=d6d6d6)](../../releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/kirukayu/Roundtable/total?style=flat-square&labelColor=0d0d0d&color=d6d6d6)](../../releases)
+[![License](https://img.shields.io/badge/license-MIT-d6d6d6?style=flat-square&labelColor=0d0d0d)](LICENSE)
+
+<img src="docs/media/demo.gif" width="880" alt="The Roundtable interface">
 
 </div>
 
@@ -112,6 +116,8 @@ why copying the file between a Steam copy and a standalone one does not work.
 ## The catalogue
 
 <div align="center">
+<img src="docs/media/hero.png" width="880" alt="The landing screen">
+<br><br>
 <img src="docs/media/catalogue.png" width="880" alt="Nine titles">
 </div>
 
