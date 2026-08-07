@@ -169,16 +169,19 @@ pub fn survey(executables: &[PathBuf]) -> Vec<Lever> {
     levers.push(Lever {
         id: "windowed-optimisations".into(),
         title: "Optimizations for windowed games".into(),
-        detail: "The same upgrade applied to every windowed game, and what turns on \
-                 variable refresh in borderless."
-            .into(),
+        detail: "The same flip-model upgrade applied to every windowed game.".into(),
         current: if global.is_empty() { "not set".into() } else { global.clone() },
-        wanted: merge_pairs(
-            &global,
-            &[("SwapEffectUpgradeEnable", "1"), ("VRROptimizeEnable", "1")],
-        ),
-        done: has_pair(&global, "SwapEffectUpgradeEnable", "1")
-            && has_pair(&global, "VRROptimizeEnable", "1"),
+        // Flip model only.
+        //
+        // `VRROptimizeEnable` used to be set here too and it has been taken out.
+        // Variable refresh is a real win on hardware that implements it well and
+        // a real problem on hardware that does not: on the monitor this was
+        // developed against it made the pointer stutter under Windows and made
+        // the screen flicker under Linux. Turning it on for everybody, sight
+        // unseen, is not a trade a launcher gets to make — it belongs in the
+        // driver panel, where it can be seen and undone.
+        wanted: merge_pairs(&global, &[("SwapEffectUpgradeEnable", "1")]),
+        done: has_pair(&global, "SwapEffectUpgradeEnable", "1"),
         needs_reboot: false,
         needs_admin: false,
         by_hand: None,
@@ -386,10 +389,9 @@ pub fn apply(app_data: &Path, executables: &[PathBuf]) -> Result<Vec<String>> {
             let global = key
                 .get_value::<String, _>("DirectXUserGlobalSettings")
                 .unwrap_or_default();
-            let wanted = merge_pairs(
-                &global,
-                &[("SwapEffectUpgradeEnable", "1"), ("VRROptimizeEnable", "1")],
-            );
+            // Flip model only — see the note beside the lever above for why
+            // variable refresh is no longer forced on.
+            let wanted = merge_pairs(&global, &[("SwapEffectUpgradeEnable", "1")]);
             if wanted != global {
                 remember(
                     format!("HKCU\\{GPU_PREFS}\\DirectXUserGlobalSettings"),
