@@ -462,14 +462,27 @@ fn coop_dir(ctx: &Ctx, game: crate::games::Game) -> crate::error::Result<PathBuf
         .ok_or(crate::error::Error::NoGameSelected)?;
     let install = crate::game::Installation::probe(game, &root)?;
 
-    for spec in crate::edition::for_game(game) {
-        if let Some(found) = resolve(ctx, spec, &install) {
-            if crate::coop::settings_path(&found.root).is_file() {
-                return Ok(found.root);
-            }
+    for root in edition_roots(ctx, game) {
+        if crate::coop::settings_path(&root).is_file() {
+            return Ok(root);
         }
     }
     Ok(install.game_dir)
+}
+
+/// Editions the launcher already knows the path of.
+///
+/// Only the remembered ones. `resolve` falls back to `edition::discover`, which
+/// walks outward from the game as far as the drive root — that is the right
+/// thing when somebody is looking for an install they have not pointed at yet,
+/// and completely wrong on an endpoint the interface calls while it is drawing.
+/// Putting it in the co-op read hung the whole server: the port stayed open and
+/// nothing answered.
+fn edition_roots(ctx: &Ctx, game: crate::games::Game) -> Vec<PathBuf> {
+    crate::edition::for_game(game)
+        .into_iter()
+        .filter_map(|spec| remembered(ctx, spec.id))
+        .collect()
 }
 
 async fn coop_read(State(ctx): State<Ctx>, Query(q): Query<GameQ>) -> Response {
@@ -504,11 +517,7 @@ async fn coop_write(State(ctx): State<Ctx>, Json(body): Json<CoopBody>) -> Respo
     if let Some(root) = ctx.app.settings.lock().install_for(body.game).map(|i| i.root.clone()) {
         if let Ok(install) = crate::game::Installation::probe(body.game, &root) {
             let mut also: Vec<PathBuf> = vec![install.game_dir.clone()];
-            for spec in crate::edition::for_game(body.game) {
-                if let Some(found) = resolve(&ctx, spec, &install) {
-                    also.push(found.root);
-                }
-            }
+            also.extend(edition_roots(&ctx, body.game));
             for other in also {
                 if other != dir && crate::coop::settings_path(&other).is_file() {
                     let _ = crate::coop::write(&other, &body.changes);
@@ -1255,12 +1264,8 @@ fn player_state(ctx: &Ctx, edition: Option<&str>) -> crate::ask::Player {
             .collect();
     }
 
-    // What the running game says, which beats the save when there is one.
-    player.live = crate::live::read(game, &player
-        .characters
-        .iter()
-        .map(|(name, level, _)| (name.clone(), *level))
-        .collect::<Vec<_>>());
+    // What the running game says, read only if the model asks for it.
+    player.live = Some(Box::new(move || crate::live::read(game)));
 
     player
 }

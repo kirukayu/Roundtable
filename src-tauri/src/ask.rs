@@ -507,9 +507,24 @@ pub struct Player {
     pub mods: Vec<String>,
     /// True when the frame-generation mod is installed.
     pub framegen: bool,
-    /// The character as the running game has them, when it is running. Beats
-    /// the save, which is whatever it was at the last grace.
-    pub live: Option<crate::live::Live>,
+    /// The character as the running game has them, read on demand.
+    ///
+    /// A closure rather than a value: reading it copies the game's whole main
+    /// module out of another process, which is a hundred megabytes and takes
+    /// real time. Almost no question needs it, and gathering it up front made
+    /// every question pay for the few that do.
+    pub live: Option<Box<dyn Fn() -> Option<crate::live::Live> + Send + Sync>>,
+}
+
+impl std::fmt::Debug for Player {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Player")
+            .field("version", &self.version)
+            .field("edition", &self.edition)
+            .field("characters", &self.characters)
+            .field("mods", &self.mods)
+            .finish()
+    }
 }
 
 async fn run_tool(
