@@ -41,7 +41,7 @@
  */
 
 /** Bumped by hand on each deploy, so `/health` can prove which code is live. */
-const BUILD = "2026-08-07.21";
+const BUILD = "2026-08-07.22";
 
 /**
  * One lane per (provider, model). Every one of these was timed from a
@@ -87,9 +87,20 @@ const LANES = [
   // context, and built for exactly this — it reads a question in Russian and
   // writes `{"query":"Radahn boss guide strategy how to beat"}` in three
   // seconds.
+  //
+  // Its thinking is switched off, which is worth six seconds a question: the
+  // same question answered in 18.9s with it on and 3.2s with it off. The
+  // trade is real and it is the right way round here — thinking helps a model
+  // reason from its own memory, and this one is answering out of wiki passages
+  // it has just been handed. Where there is nothing to hand it, the tool rounds
+  // have already established that, and a slower guess is not a better one.
   { id: "nvidia/nemotron-ultra", secret: "NVIDIA_KEY", provider: "nvidia", weight: 1.0, daily: 1000,
     url: "https://integrate.api.nvidia.com/v1/chat/completions",
-    model: "nvidia/nemotron-3-ultra-550b-a55b" },
+    model: "nvidia/nemotron-3-ultra-550b-a55b",
+    extra: { chat_template_kwargs: { enable_thinking: false } } },
+  { id: "nvidia/llama-3.3-70b", secret: "NVIDIA_KEY", provider: "nvidia", weight: 0.95, daily: 1000,
+    url: "https://integrate.api.nvidia.com/v1/chat/completions",
+    model: "meta/llama-3.3-70b-instruct" },
   { id: "nvidia/minimax-m3", secret: "NVIDIA_KEY", provider: "nvidia", weight: 0.9, daily: 1000,
     url: "https://integrate.api.nvidia.com/v1/chat/completions", model: "minimaxai/minimax-m3" },
 
@@ -249,7 +260,17 @@ function order(env, needsTools = false) {
       const nearEmpty = state.used > lane.daily * 0.9 ? 3 : 1;
       return { ...entry, score: (ms / lane.weight) * nearEmpty };
     })
-    .sort((a, b) => a.score - b.score)
+    .sort((a, b) => {
+      // Speed and quality decide it, as before — but only when they actually
+      // differ. Within a tenth of a second the difference is network weather,
+      // not a better lane, and sorting on it means the same account takes every
+      // request while nine identical ones sit idle. Ten accounts are only ten
+      // accounts if the work reaches all of them.
+      const gap = Math.abs(a.score - b.score);
+      const alike = gap < Math.max(120, Math.min(a.score, b.score) * 0.15);
+      if (alike) return a.state.used - b.state.used;
+      return a.score - b.score;
+    })
     // One lane per provider, and the best of them.
     //
     // A rate limit belongs to a key, not to a model: Groq's two lanes share one
@@ -420,6 +441,7 @@ async function callLane(lane, env, messages, signal, tools) {
       messages,
       max_tokens: MAX_TOKENS,
       temperature: 0.3,
+      ...(lane.extra ?? {}),
       ...(tools ? { tools, tool_choice: "auto" } : {}),
     }),
     signal,
@@ -508,6 +530,7 @@ async function* streamLane(lane, env, messages, signal) {
       max_tokens: MAX_TOKENS,
       temperature: 0.3,
       stream: true,
+      ...(lane.extra ?? {}),
     }),
     signal,
   });
