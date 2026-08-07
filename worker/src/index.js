@@ -41,7 +41,7 @@
  */
 
 /** Bumped by hand on each deploy, so `/health` can prove which code is live. */
-const BUILD = "2026-08-07.22";
+const BUILD = "2026-08-07.23";
 
 /**
  * One lane per (provider, model). Every one of these was timed from a
@@ -220,8 +220,12 @@ function withKeys(env) {
       continue;
     }
     if (env[lane.secret]) out.push(lane);
-    // `_2` upward, until one is missing.
-    for (let n = 2; n <= 9; n++) {
+    // `_2` upward, until one is missing. The ceiling is high because the
+    // limit is how many people are willing to hand over an account, not
+    // anything here — and a key that is stored but silently not looked at is
+    // the worst possible bug, since nothing fails and capacity simply is not
+    // there.
+    for (let n = 2; n <= 40; n++) {
       const secret = `${lane.secret}_${n}`;
       if (!env[secret]) break;
       out.push({
