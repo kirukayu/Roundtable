@@ -1,3 +1,4 @@
+pub mod ask;
 pub mod codex;
 pub mod commands;
 pub mod coop;
@@ -116,6 +117,98 @@ fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+/// The label of the window that sits over the game.
+const OVERLAY: &str = "overlay";
+
+/// A handle to the app, for the parts that do not have one.
+///
+/// The interface is served over the local HTTP server and talks to nothing but
+/// that — there is no Tauri bridge in the page, because for most of the app the
+/// page is running in the user's own browser. The overlay is a Tauri window all
+/// the same, so when it asks to close itself the request arrives at the server,
+/// and the server needs a way to reach the window. This is that way.
+static APP: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
+
+/// Closes the overlay. Called from the server, on the main thread.
+pub fn hide_overlay() {
+    let Some(app) = APP.get() else { return };
+    let handle = app.clone();
+    // Window calls have to happen on the main thread on Windows; from a request
+    // handler they silently do nothing otherwise.
+    let _ = app.run_on_main_thread(move || {
+        use tauri::Manager;
+        if let Some(window) = handle.get_webview_window(OVERLAY) {
+            let _ = window.hide();
+        }
+    });
+}
+
+/// Shows the overlay, building it the first time it is asked for.
+///
+/// It is a Tauri window rather than the browser the rest of the interface runs
+/// in, because only a native window can be told to stay above a game. That
+/// works because Roundtable has already moved the game to borderless — the
+/// desktop composites a borderless window, so anything marked always-on-top
+/// draws over it. In exclusive fullscreen nothing would, which is one more
+/// reason the optimiser changes that first.
+fn show_overlay(app: &tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+
+    if let Some(window) = app.get_webview_window(OVERLAY) {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return Ok(());
+    }
+
+    // The overlay is a page on the same local server as everything else, so it
+    // shares the stylesheet and needs the session key like any other caller.
+    let url = app
+        .try_state::<Arc<Session>>()
+        .and_then(|session| session.server.lock().as_ref().map(server::Server::url))
+        .ok_or_else(|| "the server is not running yet".to_string())?;
+    let target = format!("{url}#/overlay");
+
+    let parsed = target
+        .parse()
+        .map_err(|_| "could not build the overlay address".to_string())?;
+
+    tauri::WebviewWindowBuilder::new(app, OVERLAY, tauri::WebviewUrl::External(parsed))
+        .title("Roundtable")
+        .inner_size(660.0, 460.0)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .center()
+        .resizable(false)
+        // Shadows draw a rectangle around a transparent window on Windows.
+        .shadow(false)
+        .build()
+        .map_err(|e| format!("could not open the overlay: {e}"))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn overlay_hide(app: tauri::AppHandle) {
+    use tauri::Manager;
+    if let Some(window) = app.get_webview_window(OVERLAY) {
+        let _ = window.hide();
+    }
+}
+
+#[tauri::command]
+fn overlay_toggle(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    match app.get_webview_window(OVERLAY) {
+        Some(window) if window.is_visible().unwrap_or(false) => {
+            let _ = window.hide();
+            Ok(())
+        }
+        _ => show_overlay(&app),
+    }
+}
+
 /// Re-opens the browser tab, for the tray menu.
 #[tauri::command]
 fn reopen(session: tauri::State<'_, Arc<Session>>) -> Result<String, String> {
@@ -194,6 +287,7 @@ pub fn run() {
 
             app.manage(Arc::new(AppState::new(app_data)));
             app.manage(Arc::new(Session::default()));
+            let _ = APP.set(app.handle().clone());
 
             // Bind now rather than on the click. Loopback binding is instant, so
             // by the time anyone reaches the button the page is already being
@@ -204,6 +298,37 @@ pub fn run() {
                 let _ = ensure_server(&state, &session).await;
             });
 
+            // One key opens the overlay over the game. Shift is in there
+            // because a bare function key belongs to whatever is in focus, and
+            // taking F1 off the whole machine to save a modifier is rude.
+            {
+                use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
+
+                let hotkey = Shortcut::new(Some(Modifiers::SHIFT), Code::F1);
+                app.handle().plugin(
+                    tauri_plugin_global_shortcut::Builder::new()
+                        .with_handler(move |app, pressed, event| {
+                            // Both edges arrive; acting on the release as well
+                            // would toggle it straight back shut.
+                            if *pressed == hotkey && event.state() == ShortcutState::Pressed {
+                                let handle = app.clone();
+                                let _ = app.run_on_main_thread(move || {
+                                    let _ = overlay_toggle(handle);
+                                });
+                            }
+                        })
+                        .build(),
+                )?;
+
+                use tauri_plugin_global_shortcut::GlobalShortcutExt;
+                if let Err(error) = app.global_shortcut().register(hotkey) {
+                    // Another program may already own the combination. That is
+                    // worth a line in the log and no more — the launcher is
+                    // still perfectly usable without it.
+                    tracing::warn!(%error, "could not register the overlay hotkey");
+                }
+            }
+
             build_tray(app.handle())?;
             Ok(())
         })
@@ -211,7 +336,9 @@ pub fn run() {
             open_in_browser,
             quit_app,
             reopen,
-            session_url
+            session_url,
+            overlay_toggle,
+            overlay_hide
         ])
         .build(tauri::generate_context!())
         .expect("failed to start Roundtable")

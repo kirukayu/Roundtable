@@ -33,6 +33,7 @@ import type {
   SaveSummary,
   Settings,
   SteamAccount,
+  AskAnswer,
   ErssStatus,
   SystemReport,
   TransferReport,
@@ -54,10 +55,14 @@ const KEY = (() => {
     sessionStorage.setItem("rt-key", supplied);
     params.delete("k");
     const rest = params.toString();
+    // The fragment has to survive. It carries which screen was asked for — the
+    // overlay is `#/overlay` and a wiki deep link is `#wiki:source:title` — and
+    // rebuilding the address from the path alone silently dropped it, so the
+    // overlay window opened on the launcher instead.
     window.history.replaceState(
       {},
       "",
-      window.location.pathname + (rest ? `?${rest}` : ""),
+      window.location.pathname + (rest ? `?${rest}` : "") + window.location.hash,
     );
     return supplied;
   }
@@ -213,6 +218,16 @@ export const api = {
   tune: (game: GameId) => get<TuneStatus>("/tune", { game }),
   tuneApply: (game: GameId) => post<TuneResult>("/tune", { game }),
   tuneRevert: () => post<string[]>("/tune/revert", {}),
+
+  /* A question about the game, answered out of the mirrored wiki. */
+  ask: (question: string, edition?: string | null) =>
+    post<AskAnswer>("/ask", { question, edition: edition ?? null }),
+  /* Which articles a question matches, without asking anything of a model. */
+  askSources: (question: string, edition?: string | null) =>
+    get<string[]>("/ask/sources", { question, edition: edition ?? undefined }),
+  /* The overlay closing itself. It reaches its own window through the server,
+     because the page has no Tauri bridge — most of the time it is a browser. */
+  overlayHide: () => post<{ ok: boolean }>("/overlay/hide", {}),
 
   /* DLSS, frame generation and Reflex, in a game that ships with none. */
   erss: (game: GameId) => get<ErssStatus>("/erss", { game }),

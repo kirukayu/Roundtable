@@ -128,6 +128,9 @@ pub async fn start(app: Arc<AppState>) -> crate::error::Result<Server> {
         .route("/perf/unlock", post(perf_unlock))
         .route("/tune", get(tune_status).post(tune_apply))
         .route("/tune/revert", post(tune_revert))
+        .route("/ask", post(ask_question))
+        .route("/ask/sources", get(ask_sources))
+        .route("/overlay/hide", post(overlay_hide))
         .route("/erss", get(erss_status).post(erss_install))
         .route("/erss/uninstall", post(erss_uninstall))
         .route("/language", get(language_status).post(language_set))
@@ -1047,6 +1050,55 @@ async fn tune_apply(State(ctx): State<Ctx>, Json(body): Json<GameQ>) -> Response
 /// Puts every Windows change back.
 async fn tune_revert(State(ctx): State<Ctx>) -> Response {
     out(crate::tune::revert(&ctx.app.app_data))
+}
+
+/// The overlay, closing itself.
+async fn overlay_hide() -> Response {
+    crate::hide_overlay();
+    Json(serde_json::json!({ "ok": true })).into_response()
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AskBody {
+    question: String,
+    #[serde(default)]
+    edition: Option<String>,
+}
+
+/// A question about the game, answered out of the wiki.
+async fn ask_question(State(ctx): State<Ctx>, Json(body): Json<AskBody>) -> Response {
+    out(crate::ask::answer(
+        &ctx.app.http,
+        &ctx.app.app_data,
+        body.edition.as_deref(),
+        &body.question,
+    )
+    .await)
+}
+
+/// Which articles a question matches, without asking anything.
+///
+/// The interface calls this first so it can name what it is reading while the
+/// model is still thinking. Waiting is easier when something is happening.
+async fn ask_sources(State(ctx): State<Ctx>, Query(q): Query<AskQuery>) -> Response {
+    let found = crate::ask::gather(
+        &ctx.app.http,
+        &ctx.app.app_data,
+        q.edition.as_deref(),
+        &q.question,
+        4,
+    )
+    .await;
+    Json(found.into_iter().map(|p| p.title).collect::<Vec<_>>()).into_response()
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AskQuery {
+    question: String,
+    #[serde(default)]
+    edition: Option<String>,
 }
 
 /// DLSS, frame generation and Reflex, and whether the game is ready for them.

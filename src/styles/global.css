@@ -2251,3 +2251,184 @@ html.lenis { scroll-behavior: auto !important; }
 .lenis.lenis-stopped { overflow: clip; }
 .lenis.lenis-smooth [data-lenis-prevent] { overscroll-behavior: contain; }
 .lenis.lenis-smooth iframe { pointer-events: none; }
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Overlay                                                            */
+/* ══════════════════════════════════════════════════════════════════ */
+
+/*
+ * The window that sits over the game.
+ *
+ * Its own window rather than part of the launcher, because only a native window
+ * can be told to stay above a game — and that only works at all because the
+ * optimiser has already moved the game to borderless, where the desktop
+ * composites it.
+ *
+ * The frame is transparent, so everything here is drawn rather than inherited:
+ * the card carries its own ground, its own hairline and its own light.
+ */
+.ov {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s3);
+  padding: var(--s4);
+  background: transparent;
+  /* A game is behind this. Text must not be selectable by a stray drag. */
+  user-select: none;
+}
+
+.ov__card {
+  position: relative;
+  width: 100%;
+  max-width: 620px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: var(--r-lg);
+  /*
+   * Charcoal, lit from the top left, over near-black. The same gradient the
+   * launcher's cards use — the overlay should look like it came out of the
+   * same app, because it did.
+   */
+  background:
+    radial-gradient(120% 90% at 12% -10%, rgba(255, 255, 255, 0.07), transparent 58%),
+    linear-gradient(180deg, rgba(24, 24, 24, 0.97), rgba(8, 8, 8, 0.97));
+  box-shadow: var(--sh-3), 0 0 0 1px rgba(0, 0, 0, 0.6);
+  /* The game shows through, faintly. It is an overlay, not a window on top. */
+  backdrop-filter: blur(18px) saturate(0.6);
+}
+
+/* A single slow pass of light along the top edge. Nothing glows; it moves. */
+.ov__sheen {
+  position: absolute;
+  top: 0;
+  left: -40%;
+  width: 40%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+  animation: ov-sheen 7s var(--ease) infinite;
+  pointer-events: none;
+}
+@keyframes ov-sheen {
+  0%, 62% { transform: translateX(0); opacity: 0; }
+  68% { opacity: 1; }
+  100% { transform: translateX(350%); opacity: 0; }
+}
+
+.ov__ask {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s4) var(--s5);
+}
+
+.ov__mark { color: var(--w2); flex: 0 0 auto; }
+
+.ov__field {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  color: var(--w0);
+  font-size: var(--t-lg);
+  font-weight: 300;
+  letter-spacing: -0.015em;
+  user-select: text;
+}
+.ov__field:focus { outline: none; }
+.ov__field::placeholder { color: var(--w4); }
+
+.ov__kbd {
+  flex: 0 0 auto;
+  min-width: 24px;
+  padding: 3px 7px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  color: var(--w3);
+  font-family: var(--mono);
+  font-size: var(--t-2xs);
+  text-align: center;
+}
+
+.ov__line { height: 1px; background: var(--line); }
+.ov__body { overflow: hidden; }
+
+.ov__working { padding: var(--s4) var(--s5); }
+
+.ov__stage {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  color: var(--w3);
+  font-size: var(--t-sm);
+}
+
+/* Three dots, breathing in turn. */
+.ov__dots { display: inline-flex; gap: 3px; }
+.ov__dots i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--w2);
+  animation: ov-dot 1.3s var(--ease) infinite;
+}
+.ov__dots i:nth-child(2) { animation-delay: 0.16s; }
+.ov__dots i:nth-child(3) { animation-delay: 0.32s; }
+@keyframes ov-dot {
+  0%, 100% { opacity: 0.2; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-2px); }
+}
+
+.ov__answer {
+  padding: var(--s4) var(--s5) 0;
+  color: var(--w1);
+  font-size: var(--t-md);
+  line-height: 1.65;
+  user-select: text;
+}
+
+/* The chips wrap onto a second line when there are four of them, so the model's
+   name sits with the last of them rather than floating in the middle. */
+.ov__foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s4);
+  padding: var(--s4) var(--s5);
+}
+
+.ov__sources { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s3); }
+.ov__foot .ov__sources { margin-top: 0; }
+
+/* Where the answer came from, so it can be checked rather than trusted. */
+.ov__src {
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-full);
+  color: var(--w3);
+  font-size: var(--t-2xs);
+  white-space: nowrap;
+}
+
+.ov__lane {
+  flex: 0 0 auto;
+  color: var(--w4);
+  font-family: var(--mono);
+  font-size: var(--t-2xs);
+}
+
+.ov__failed {
+  padding: var(--s4) var(--s5);
+  color: var(--warn);
+  font-size: var(--t-sm);
+}
+
+.ov__hint {
+  color: var(--w4);
+  font-size: var(--t-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}

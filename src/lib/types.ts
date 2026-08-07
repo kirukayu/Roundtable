@@ -363,6 +363,15 @@ export interface Machine {
   suggestedCap: number;
 }
 
+/** An answer drawn out of the wiki, with the articles it came from. */
+export interface AskAnswer {
+  answer: string;
+  sources: string[];
+  /** Which model answered, and how long it took. */
+  lane: string | null;
+  ms: number | null;
+}
+
 /** A Windows setting the game cannot reach on its own. */
 export interface Lever {
   id: string;
