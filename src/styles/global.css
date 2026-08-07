@@ -1368,6 +1368,14 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; font
 .wiki__body a { color: var(--w1); text-decoration: none; border-bottom: 1px solid var(--line-2); }
 .wiki__body a:hover { color: var(--w0); border-bottom-color: var(--w3); }
 .wiki__body img { max-width: 100%; height: auto; border-radius: var(--r-sm); }
+/*
+ * The little icons the wiki draws as inline SVG — the magnifier on a thumbnail
+ * caption, the information mark. They carry no size of their own, so a browser
+ * gives them the default 300 by 150 and they hang a hundred pixels off the side
+ * of the article.
+ */
+.wiki__body svg { width: 1em; height: 1em; vertical-align: -0.15em; }
+.wiki__body .info-icon, .wiki__body .mw-file-magnify { display: inline-block; width: 1em; }
 /* A real table. `display: block` here made every cell stack into a column —
    the wiki's own layout tables are how half its pages are arranged. */
 .wiki__body table {
@@ -1379,6 +1387,31 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; font
 /* Layout tables carry no borders on the wiki, so they should not gain any. */
 .wiki__body table:not([class]) th,
 .wiki__body table:not([class]) td { border: 0; }
+
+/*
+ * The same table, twice.
+ *
+ * Fandom writes a drop table out in two shapes: the full one with its headers,
+ * marked `hidden` and switched on for a wide screen, and a stacked one for a
+ * narrow screen. The switch is a media query in their stylesheet, which is not
+ * here — so both were showing, and the one that came out on top was the stacked
+ * one with no headers at all. Keep the full one and drop the other.
+ */
+.wiki__body table:has(> tbody > tr.hidden) > tbody > tr:not(.hidden) { display: none; }
+.wiki__body table:has(> tbody > tr.hidden) > tbody > tr.hidden { display: table-row; }
+/* MediaWiki's marker for a paragraph or row that ended up with nothing in it. */
+.wiki__body .mw-empty-elt { display: none; }
+
+/*
+ * The same trick one level up, for everything that is not a table.
+ *
+ * A quote template also emits itself twice: a decorative version built out of a
+ * table and five-em serif quote marks, wrapped in `div.hidden`, and a plain
+ * blockquote beside it. Hiding the wrapper leaves the blockquote, which is the
+ * one that reads. Table rows are left to the rule above, where the copy worth
+ * keeping is the other one.
+ */
+.wiki__body div.hidden, .wiki__body span.hidden { display: none; }
 /*
  * A data table wider than the column scrolls rather than squeezing.
  *
@@ -1400,6 +1433,10 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; font
   border: 1px solid var(--line);
   text-align: left;
   vertical-align: top;
+  /* A cell is the one place a long word must push the column wider rather than
+     break inside itself — a broken word in a narrow cell becomes a column of
+     single letters, which is unreadable in a way an overflow never is. */
+  overflow-wrap: normal;
 }
 .wiki__body th { color: var(--w1); font-weight: 400; background: rgba(255,255,255,0.02); }
 .wiki__body pre, .wiki__body code {
