@@ -52,17 +52,23 @@ const MAX_ROUNDS: usize = 4;
 /// provider in a few seconds and earned a 429 from every lane in turn; the
 /// answer then came from whichever model was left, which was the worst one.
 ///
-/// Twenty-six hundred is a long section of a wiki page and is picked as the
-/// section that matches rather than the first one, so it is nearly always the
-/// part that holds the answer.
-const ARTICLE: usize = 2600;
+/// Twenty-six hundred was the number while the pool was one account per
+/// provider and every question was a minute of somebody's allowance. It is
+/// twenty-five accounts now, and the constraint moved: at twenty-six hundred a
+/// question about a boss got the top of the page and came back "there was not
+/// enough information", which is a worse failure than a slow answer.
+///
+/// Four thousand is a whole strategy section, and it is chosen as the section
+/// that matches rather than the first one, so it is nearly always the part that
+/// holds the answer.
+const ARTICLE: usize = 4000;
 
 /// How much of an older tool result is kept when the conversation is re-sent.
 ///
 /// The model has already read it and acted on it; what it needs on the next
 /// round is a reminder of what it learned, not the text again. Only the most
 /// recent results stay whole.
-const STALE: usize = 450;
+const STALE: usize = 600;
 /// How many tool results stay at full length.
 const FRESH: usize = 1;
 

@@ -41,7 +41,7 @@
  */
 
 /** Bumped by hand on each deploy, so `/health` can prove which code is live. */
-const BUILD = "2026-08-07.23";
+const BUILD = "2026-08-07.25";
 
 /**
  * One lane per (provider, model). Every one of these was timed from a
@@ -53,8 +53,16 @@ const BUILD = "2026-08-07.23";
  * than an 8B, so it is preferred while it is anywhere near as quick.
  */
 const LANES = [
-  // Groq: 73 ms from here, and 14,400 a day. The backbone.
-  { id: "groq/llama-3.3-70b", secret: "GROQ_KEY", provider: "groq", weight: 1.0, daily: 13000,
+  // Groq: 73 ms from here, and 14,400 a day. The deepest allowance in the pool.
+  //
+  // Llama is weighted below the others on what it wrote rather than on what it
+  // is. Asked twice how to beat Radahn, with both wiki articles in front of it,
+  // it produced a paragraph about being patient, gave him a holy-damage second
+  // phase he does not have, and closed by saying it could not find enough to
+  // give more detail — while Mistral and Nemotron answered the same kind of
+  // question with the actual phase thresholds. It is fast and there is a lot of
+  // it, so it stays; it goes second.
+  { id: "groq/llama-3.3-70b", secret: "GROQ_KEY", provider: "groq", weight: 0.7, daily: 13000,
     url: "https://api.groq.com/openai/v1/chat/completions", model: "llama-3.3-70b-versatile" },
   { id: "groq/gpt-oss-120b", secret: "GROQ_KEY", provider: "groq", weight: 1.0, daily: 1000,
     url: "https://api.groq.com/openai/v1/chat/completions", model: "openai/gpt-oss-120b" },
@@ -375,6 +383,12 @@ ANSWERING
 What you looked up outranks anything you remember — the game has been patched many
 times and a mod changes numbers outright. Where you could not find it, say plainly
 that it is not there, then answer from your own knowledge and mark it as memory.
+
+Answer with what you have. A page you read is rarely everything about a thing and
+it does not have to be: if it gave you the phases and not the resistances, give
+them the phases. "I could not give more detail because the article did not cover
+it" is a sentence about you, and they asked about a boss. Say what you know, in one
+short clause say what you could not confirm, and stop.
 
 Memory is for how things work, never for figures. If the player names an item and
 the searches came back empty, the honest answer is that it is not in this game —
