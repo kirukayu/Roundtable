@@ -1178,14 +1178,30 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; font
 /* ══════════════════════════════════════════════════════════════════ */
 
 /* Contents on the left, the article in the middle, its headings on the right. */
+/*
+ * Three columns: every article, the article, its contents.
+ *
+ * This one breaks out of the reading width the other panes are held to. They
+ * are forms and lists that get worse wide; this is a reference document with two
+ * rails either side of it, and inside a 1440 pane the article was left with 720
+ * pixels — a portal of icons came out one per row and a floated infobox had
+ * nowhere to float to.
+ */
 .wk {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 200px;
-  gap: var(--s6);
+  grid-template-columns: 250px minmax(0, 1fr) 190px;
+  gap: var(--s5);
   align-items: start;
+  width: min(1760px, 100%);
+  margin: 0 auto;
+  /* Following a link scrolls here, and the bar across the top is fixed: without
+     this the title lands underneath it. */
+  scroll-margin-top: 88px;
 }
-@media (max-width: 1400px) {
-  .wk { grid-template-columns: 260px minmax(0, 1fr); }
+/* Same for jumping to a section from the contents rail. */
+.wiki__body h1, .wiki__body h2, .wiki__body h3 { scroll-margin-top: 88px; }
+@media (max-width: 1300px) {
+  .wk { grid-template-columns: 240px minmax(0, 1fr); }
   .wk__toc { display: none; }
 }
 @media (max-width: 900px) {
@@ -1228,6 +1244,12 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; font
 }
 
 .wk__item {
+  /* Thousands of rows in a column with a max height: without this they all
+     shrink to share it and every title lands on top of the next. */
+  flex: 0 0 auto;
+  min-height: 26px;
+  display: flex;
+  align-items: center;
   padding: var(--s2) var(--s3);
   background: none;
   border: 0;
@@ -1324,7 +1346,10 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; font
   font-size: var(--t-sm);
   line-height: 1.85;
   color: var(--w2);
-  overflow-wrap: anywhere;
+  /* `anywhere` breaks inside ordinary words the moment a column is tight, which
+     turned every narrow table cell into one letter per line. `break-word` only
+     gives way for something that genuinely cannot fit, like a bare URL. */
+  overflow-wrap: break-word;
 }
 .wiki__body h1, .wiki__body h2, .wiki__body h3, .wiki__body h4 {
   font-weight: 300;
@@ -1354,6 +1379,22 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; font
 /* Layout tables carry no borders on the wiki, so they should not gain any. */
 .wiki__body table:not([class]) th,
 .wiki__body table:not([class]) td { border: 0; }
+/*
+ * A data table wider than the column scrolls rather than squeezing.
+ *
+ * `wikitable` is MediaWiki's own class for a real table of data — the drop
+ * tables, the stat comparisons. Only those get `display: block`, because doing
+ * it to every table is what once collapsed the layout tables half the wiki is
+ * built out of into a single column.
+ */
+.wiki__body table.wikitable {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.wiki__body table.wikitable th,
+.wiki__body table.wikitable td { overflow-wrap: normal; }
 .wiki__body th, .wiki__body td {
   padding: var(--s2) var(--s3);
   border: 1px solid var(--line);
@@ -1376,12 +1417,172 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; font
   color: var(--w3);
 }
 .wiki__body hr { border: 0; border-top: 1px solid var(--line); margin: var(--s5) 0; }
-/* Infoboxes and float-right thumbnails wreck a narrow column. */
-.wiki__body .infobox, .wiki__body .thumb, .wiki__body figure {
-  float: none !important;
-  width: auto !important;
-  max-width: 100%;
+
+/*
+ * Thumbnails, floated the way the article was written.
+ *
+ * These used to be forced to `float: none`, which is safe and wastes half the
+ * width: every picture became a full-width block and the text ran under it in a
+ * single ribbon. The column here is wide enough to float them, so the article
+ * reads the way it does on the wiki. Below that width they go back to stacking,
+ * because a float in a narrow column squeezes the text to nothing.
+ */
+/* `:not(.pi-image)` because the infobox's own picture is a `<figure>` too, and
+   floating it inside a 320px card is how the labels ended up beside nothing. */
+.wiki__body .thumb, .wiki__body figure:not(.pi-image) {
+  max-width: min(340px, 45%);
+  margin: var(--s2) 0 var(--s4) var(--s5);
+  float: right;
+  clear: right;
+}
+.wiki__body .thumb.tleft, .wiki__body .floatleft, .wiki__body figure.mw-halign-left {
+  float: left;
+  clear: left;
+  margin: var(--s2) var(--s5) var(--s4) 0;
+}
+.wiki__body .thumbcaption, .wiki__body figcaption {
+  margin-top: var(--s2);
+  font-size: var(--t-2xs);
+  line-height: 1.6;
+  color: var(--w4);
+}
+/*
+ * Headings flow beside a float rather than clearing it.
+ *
+ * Clearing keeps a heading's rule from passing behind a picture, and costs far
+ * more than it saves: an article whose intro is one line then a heading left the
+ * entire left column empty for the height of the infobox — a thousand pixels of
+ * nothing. The wiki itself lets them flow, so this does too.
+ */
+.wiki__body h1 { clear: both; }
+
+/*
+ * Galleries, as a grid.
+ *
+ * Fandom sizes each tile with an inline width and relies on its own stylesheet
+ * making them inline-block. Without that every tile is a full-width block, which
+ * is why a portal of thirty icons came out as one very long column.
+ */
+.wiki__body .wikia-gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s4);
+  justify-content: flex-start;
   margin: var(--s4) 0;
+}
+.wiki__body .wikia-gallery-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s2);
+}
+.wiki__body .wikia-gallery-item .thumb {
+  float: none;
+  margin: 0;
+  max-width: none;
+  height: auto !important;
+}
+.wiki__body .gallery-image-wrapper {
+  height: auto !important;
+  width: auto !important;
+}
+.wiki__body .wikia-gallery-item img {
+  display: block;
+  border-radius: var(--r-sm);
+}
+.wiki__body .lightbox-caption, .wiki__body .wikia-gallery-caption {
+  font-size: var(--t-2xs);
+  color: var(--w3);
+  text-align: center;
+  line-height: 1.5;
+}
+/* Older galleries are tables of cells rather than divs. */
+.wiki__body .gallerybox { display: inline-block; vertical-align: top; }
+
+/*
+ * The main page, which is a set of boxes rather than an article.
+ *
+ * Each box is a portal — Bosses, Weapons, Locations. Laid out as cards they read
+ * as a menu, which is what they are; stacked they are a mile of scrolling before
+ * the first sentence.
+ */
+.wiki__body .lcs-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--s5);
+  align-items: start;
+}
+.wiki__body .mainpage-box {
+  background: var(--b1);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: var(--s5);
+}
+.wiki__body .mainpage-header {
+  font-size: var(--t-md);
+  font-weight: 300;
+  color: var(--w0);
+  margin-bottom: var(--s4);
+  padding-bottom: var(--s3);
+  border-bottom: 1px solid var(--line);
+}
+.wiki__body .mainpage-header a { border-bottom: 0; }
+/* `<center>` is still all over these pages and it fights every layout above. */
+.wiki__body center { text-align: inherit; }
+.wiki__body .mainpage-header center { text-align: left; }
+
+/*
+ * The Convergence wiki, which is a MediaWiki of its own with its own templates.
+ *
+ * Its front page is a row of counters and a grid of navigation cards. Both are
+ * written as blocks inside inline elements and rely entirely on the wiki's own
+ * stylesheet to lay out, so without this the counters read one word per line —
+ * "1,977", "pages", "19,593", "edits" — and the cards come down in single file.
+ */
+.wiki__body .statistics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s5);
+  justify-content: center;
+  margin: var(--s4) 0;
+}
+.wiki__body .statistics .stat {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s5);
+  align-items: baseline;
+}
+.wiki__body .statistics .stat > span {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+}
+.wiki__body .statistics .stat div { display: inline; color: var(--w0); }
+
+.wiki__body .nav-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--s4);
+  margin: var(--s4) 0;
+}
+.wiki__body .nav-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--r);
+  border: 1px solid var(--line);
+}
+.wiki__body .nav-card img {
+  display: block;
+  width: 100%;
+  height: 140px;
+  object-fit: cover;
+  border-radius: 0;
+}
+.wiki__body .nav-card .thumb,
+.wiki__body .nav-card figure {
+  float: none;
+  margin: 0;
+  max-width: none;
 }
 
 /*
@@ -1412,28 +1613,168 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; font
 .wiki__body .collapsible-content { display: block !important; }
 .wiki__body .mw-collapsible-toggle { display: none; }
 
-/* Infobox tables read as key/value rows rather than a squeezed grid. */
+/*
+ * The infobox, floated like a real one.
+ *
+ * This is the card of stats at the top right of every weapon, boss and location
+ * page. Stacked it pushes the whole article down a screen and leaves the right
+ * half of the column empty; floated, the opening paragraphs sit beside it and
+ * the page reads the way it was written.
+ */
+.wiki__body .portable-infobox, .wiki__body .infobox {
+  float: right;
+  clear: right;
+  width: min(320px, 42%);
+  background: var(--b1);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: var(--s4);
+  margin: 0 0 var(--s5) var(--s5);
+  font-size: var(--t-xs);
+}
+/*
+ * MediaWiki writes these labels as real headings — `<h3 class="pi-data-label">`
+ * — and the article heading rule above was giving each one a top margin and a
+ * rule under it. Inside a stat card that reads as the value floating a long way
+ * above the thing it belongs to, with a line through the middle. Every heading
+ * inside a component has to be reset back to plain text.
+ */
+.wiki__body .portable-infobox h1,
+.wiki__body .portable-infobox h2,
+.wiki__body .portable-infobox h3,
+.wiki__body .portable-infobox h4,
+.wiki__body .infobox h1,
+.wiki__body .infobox h2,
+.wiki__body .infobox h3,
+.wiki__body .infobox h4,
+.wiki__body .wikia-gallery h3,
+.wiki__body .mainpage-box h2,
+.wiki__body .mainpage-box h3 {
+  margin: 0;
+  padding: 0;
+  border-bottom: 0;
+  font-size: inherit;
+  letter-spacing: 0;
+  clear: none;
+}
+
 .wiki__body .pi-data {
   display: flex;
+  align-items: baseline;
   justify-content: space-between;
   gap: var(--s4);
   padding: var(--s2) 0;
   border-bottom: 1px solid var(--line);
 }
-.wiki__body .pi-data-label { color: var(--w4); flex-shrink: 0; }
-.wiki__body .pi-data-value { text-align: right; }
-.wiki__body .pi-image { text-align: center; }
-.wiki__body .portable-infobox {
-  background: var(--b1);
-  border-radius: var(--r);
-  padding: var(--s4);
-  margin: var(--s4) 0;
+.wiki__body .pi-data:last-child { border-bottom: 0; }
+.wiki__body .pi-data-label {
+  color: var(--w4);
+  flex: 0 0 auto;
+  max-width: 45%;
 }
-.wiki__body .pi-title, .wiki__body .pi-header {
-  display: block;
-  font-size: var(--t-sm);
+.wiki__body .pi-data-value { text-align: right; min-width: 0; }
+/* The value is often a `<div>` full of links, which must not become a column. */
+.wiki__body .pi-data-value p { margin: 0; }
+.wiki__body .pi-data-value ul { margin: 0; padding-left: var(--s4); list-style: none; }
+/* Groups of stats, with the group's own heading. */
+.wiki__body .pi-group { margin-top: var(--s3); }
+.wiki__body .pi-header {
   color: var(--w1);
-  margin: var(--s3) 0 var(--s2);
+  padding-bottom: var(--s2);
+  border-bottom: 1px solid var(--line-2);
+}
+/* Whatever the infobox says, the picture has to fit the card. */
+.wiki__body .pi-image { text-align: center; margin-bottom: var(--s3); }
+.wiki__body .pi-image img, .wiki__body .infobox img {
+  max-width: 100%;
+  height: auto;
+  width: auto !important;
+}
+.wiki__body .pi-title {
+  display: block;
+  font-size: var(--t-sm) !important;
+  color: var(--w0);
+  margin: 0 0 var(--s3) !important;
+  padding-bottom: var(--s3) !important;
+  border-bottom: 1px solid var(--line) !important;
+}
+.wiki__body .pi-header {
+  display: block;
+  font-size: var(--t-xs) !important;
+  margin: var(--s4) 0 var(--s2) !important;
+}
+/* An infobox is a table on the older pages, and a floated table must not
+   also be told it is 100% wide by its own inline attributes. */
+.wiki__body .infobox { display: block; }
+.wiki__body .infobox > tbody > tr > td,
+.wiki__body .infobox > tbody > tr > th {
+  border: 0;
+  padding: var(--s2) 0;
+}
+
+/*
+ * A stat table inside the infobox, allowed to keep its shape.
+ *
+ * These are the damage negation grids on every armour page. In a 320px card
+ * against `overflow-wrap: anywhere` they do not overflow — they shatter, one
+ * letter per line, and the card grows to two thousand pixels. Words stay whole
+ * and the table scrolls sideways instead, which is the only honest way to put a
+ * ten-column grid in a narrow column.
+ */
+.wiki__body .portable-infobox table,
+.wiki__body .infobox table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  font-size: var(--t-2xs);
+}
+.wiki__body .portable-infobox td,
+.wiki__body .portable-infobox th,
+.wiki__body .infobox td,
+.wiki__body .infobox th {
+  overflow-wrap: normal;
+  word-break: keep-all;
+  white-space: nowrap;
+  padding: var(--s2);
+}
+.wiki__body .portable-infobox img,
+.wiki__body .infobox img { max-width: 100%; height: auto; }
+
+/*
+ * The gallery of pictures at the top of an infobox.
+ *
+ * On the wiki these sit behind tabs and one shows at a time. There is no
+ * JavaScript here to switch them, so every panel is revealed — which for a boss
+ * with five screenshots meant an infobox nearly three thousand pixels tall and a
+ * page that scrolled past the article. Two up keeps all of them and costs a
+ * fifth of the height.
+ */
+.wiki__body .pi-image-collection {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s2);
+  align-items: start;
+}
+.wiki__body .pi-image-collection .pi-tab-link,
+.wiki__body .pi-image-collection .pi-image-collection-tabs { display: none; }
+.wiki__body .pi-image-collection figure,
+.wiki__body .pi-image-collection .pi-tab-content { margin: 0; }
+
+/*
+ * Below this the column is too narrow to float anything: the text would be
+ * squeezed into a gutter. Everything goes back to stacking.
+ */
+@media (max-width: 1100px) {
+  .wiki__body .portable-infobox,
+  .wiki__body .infobox,
+  .wiki__body .thumb,
+  .wiki__body figure {
+    float: none;
+    width: auto;
+    max-width: 100%;
+    margin: var(--s4) 0;
+  }
 }
 
 /* ══════════════════════════════════════════════════════════════════ */
@@ -1482,6 +1823,8 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; font
 .tab[aria-selected="true"]::after { transform: scaleX(1); }
 
 .pane { max-width: 1440px; margin: 0 auto; padding: var(--s7); }
+/* The wiki is a document with two rails, not a form. It gets the window. */
+.pane--wide { max-width: none; padding-left: var(--s6); padding-right: var(--s6); }
 
 /* ══════════════════════════════════════════════════════════════════ */
 /* Cards, rows, controls                                              */

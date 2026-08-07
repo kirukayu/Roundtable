@@ -25,6 +25,7 @@ import type {
   LoaderInstall,
   ModRecord,
   PatchReport,
+  PerfStatus,
   PreparedLaunch,
   Profile,
   ScanState,
@@ -32,8 +33,12 @@ import type {
   SaveSummary,
   Settings,
   SteamAccount,
+  ErssStatus,
   SystemReport,
   TransferReport,
+  TuneResult,
+  TuneStatus,
+  UnlockReport,
 } from "./types";
 
 /**
@@ -195,10 +200,36 @@ export const api = {
       ...(edition ? { edition } : {}),
     })}`, {}),
 
+  /* The graphics settings, and the one that turns 60 into 30. */
+  perf: (game: GameId) => get<PerfStatus>("/perf", { game }),
+  perfSmooth: (game: GameId) => post<string[]>("/perf/smooth", { game }),
+  perfSet: (game: GameId, key: string, value: string) =>
+    post<string>("/perf/set", { game, key, value }),
+  /* Rewrites the frame cap in the running game. 0 puts the shipped 60 back. */
+  perfUnlock: (game: GameId, fps: number) =>
+    post<UnlockReport>("/perf/unlock", { game, fps }),
+
+  /* The Windows levers the game cannot reach, and the one button for all of it. */
+  tune: (game: GameId) => get<TuneStatus>("/tune", { game }),
+  tuneApply: (game: GameId) => post<TuneResult>("/tune", { game }),
+  tuneRevert: () => post<string[]>("/tune/revert", {}),
+
+  /* DLSS, frame generation and Reflex, in a game that ships with none. */
+  erss: (game: GameId) => get<ErssStatus>("/erss", { game }),
+  erssInstall: (game: GameId, steamOverlay: boolean, password?: string) =>
+    post<{ changes: string[] }>("/erss", { game, steamOverlay, password: password ?? null }),
+  erssUninstall: (game: GameId) => post<string[]>("/erss/uninstall", { game }),
+
   /* What language the emulated Steam tells the game to use. */
   language: (game: GameId) => get<LanguageStatus>("/language", { game }),
   languageSet: (game: GameId, language: string) =>
     post<string[]>("/language", { game, language }),
+
+  /* Puts a total conversion's own text into that language. */
+  editionTextInstall: (game: GameId, edition: string, language: string, archive?: string) =>
+    post<string[]>("/language/edition", { game, edition, language, archive: archive ?? null }),
+  editionTextRevert: (game: GameId, edition: string, language: string) =>
+    post<string[]>("/language/edition/revert", { game, edition, language, archive: null }),
 
   /* Every check Roundtable can run against this machine. */
   diagnose: (game: GameId, edition?: string | null) =>

@@ -316,6 +316,26 @@ export interface LanguageFile {
   disabled: boolean;
 }
 
+/** A translation Roundtable already carries, so installing it is one click. */
+export interface BundledText {
+  version: string;
+  author: string;
+  source: string;
+}
+
+/** Whether a total conversion's own text exists in the game's language. */
+export interface EditionText {
+  edition: string;
+  /** The folder the game reads, e.g. `rusru`. */
+  locale: string;
+  /** False when the mod ships one English archive copied into every locale. */
+  translated: boolean;
+  folder: string;
+  bundled: BundledText | null;
+  /** The mod's own text is kept aside, so this can be undone. */
+  revertible: boolean;
+}
+
 export interface LanguageStatus {
   files: LanguageFile[];
   current: string | null;
@@ -323,6 +343,93 @@ export interface LanguageStatus {
   conflict: boolean;
   options: [string, string][];
   selector: string | null;
+  /** One per installed conversion that ships its own text. */
+  editions: EditionText[];
+}
+
+/* ── Frame rate ───────────────────────────────────────────────────── */
+
+/** What the preset was worked out from. */
+export interface Machine {
+  gpu: string | null;
+  vramMb: number;
+  ramMb: number;
+  cores: number;
+  width: number;
+  height: number;
+  refreshHz: number;
+  tier: "weak" | "modest" | "strong" | "ample";
+  /** The highest clean division of the panel this machine holds every frame. */
+  suggestedCap: number;
+}
+
+/** A Windows setting the game cannot reach on its own. */
+export interface Lever {
+  id: string;
+  title: string;
+  detail: string;
+  current: string;
+  wanted: string;
+  done: boolean;
+  needsReboot: boolean;
+  needsAdmin: boolean;
+  /** Where to click, for the ones no program can set. */
+  byHand: string | null;
+}
+
+export interface TuneStatus {
+  levers: Lever[];
+  /** Things holding the graphics card while the game runs. */
+  competitors: string[];
+}
+
+/** DLSS, frame generation and Reflex, added to a game that has none. */
+export interface ErssStatus {
+  installed: boolean;
+  loader: string | null;
+  version: string | null;
+  frameTimeAddon: boolean;
+  archives: string[];
+  reshade: boolean;
+  /** The release archives are locked; the password comes with the download. */
+  needsPassword: boolean;
+  /** What stops it working until it is dealt with. */
+  blockers: string[];
+}
+
+export interface TuneResult {
+  changes: string[];
+  competitors: string[];
+}
+
+/** What the frame cap patch did. */
+export interface UnlockReport {
+  fps: number;
+  framelock: boolean;
+  /** The hardcoded 60 Hz display request, cleared. This is the 30 fps one. */
+  hertz: boolean;
+}
+
+export interface PerfSetting {
+  key: string;
+  value: string;
+  /** What this would become, when it is costing frames. */
+  suggested: string | null;
+  reason: string | null;
+}
+
+export interface PerfStatus {
+  path: string | null;
+  settings: PerfSetting[];
+  display: string | null;
+  /** Forces 60 Hz with unbreakable vsync, which halves to 30 on a late frame. */
+  exclusiveFullscreen: boolean;
+  improvable: number;
+  /** A third-party unlocker DLL somebody dropped in before. */
+  unlocker: string | null;
+  machine: Machine;
+  /** The game is up, so its frame cap can be rewritten now. */
+  gameRunning: boolean;
 }
 
 /* ── Diagnostics ──────────────────────────────────────────────────── */
@@ -525,4 +632,6 @@ export interface Settings {
   torrentPort: number;
   useDoh: boolean;
   firstRunComplete: boolean;
+  /** Frame cap written into the game after it starts. Null leaves 60 alone. */
+  unlockFps: number | null;
 }

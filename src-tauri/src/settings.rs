@@ -40,6 +40,10 @@ pub struct Settings {
     /// rediscovered by scanning.
     #[serde(default)]
     pub editions: std::collections::BTreeMap<String, PathBuf>,
+    /// Frame cap to write into the game after it starts. `None` leaves the
+    /// shipped 60 alone.
+    #[serde(default)]
+    pub unlock_fps: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,6 +79,7 @@ impl Default for Settings {
             use_doh: true,
             first_run_complete: false,
             editions: std::collections::BTreeMap::new(),
+            unlock_fps: None,
         }
     }
 }

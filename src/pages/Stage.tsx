@@ -5,6 +5,9 @@ import { EditionSwitch } from "../components/EditionSwitch";
 import { Icon } from "../components/Icons";
 import { HealthCard } from "../components/HealthCard";
 import { LanguageCard } from "../components/LanguageCard";
+import { TuneCard } from "../components/TuneCard";
+import { ErssCard } from "../components/ErssCard";
+import { PerfCard } from "../components/PerfCard";
 import { MatchCard } from "../components/MatchCard";
 import { EASE } from "../components/Motion";
 import { Blank, Card, Chip, Skeleton, useToast } from "../components/ui";
@@ -416,7 +419,8 @@ export default function Stage({ game, onBack }: { game: GameInfo; onBack: () => 
         </div>
       )}
 
-      <div className="pane">
+      {/* The wiki is a three-column document and suffocates at reading width. */}
+      <div className={pane === "wiki" ? "pane pane--wide" : "pane"}>
         {loading ? (
           <div className="g2">
             <Card><Skeleton variant="line" count={4} /></Card>
@@ -515,6 +519,9 @@ export default function Stage({ game, onBack }: { game: GameInfo; onBack: () => 
             {pane === "wiki" && <WikiPane edition={edition} />}
             {pane === "system" && (
               <div className="col">
+                <TuneCard game={game.id} />
+                <ErssCard game={game.id} />
+                <PerfCard game={game.id} />
                 <LanguageCard game={game.id} />
                 <SystemPane
                   gameId={game.id}

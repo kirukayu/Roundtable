@@ -168,6 +168,7 @@ fn re(pattern: &str) -> Regex {
 struct Patterns {
     script: Regex,
     style: Regex,
+    noscript: Regex,
     editsection: Regex,
     comment: Regex,
     handler: Regex,
@@ -187,6 +188,10 @@ fn patterns() -> &'static Patterns {
     CELL.get_or_init(|| Patterns {
         script: re(r"(?is)<script\b[^>]*>.*?</script>"),
         style: re(r"(?is)<style\b[^>]*>.*?</style>"),
+        // Fandom puts a copy of every image in a `<noscript>` beside the lazy
+        // one. A browser with scripting on ignores it, so it is thirty-odd
+        // invisible duplicates per page and nothing else.
+        noscript: re(r"(?is)<noscript\b[^>]*>.*?</noscript>"),
         // Finds where an [edit] control starts. Removing it needs depth
         // counting, not a pattern — see `strip_spans`.
         editsection: re(r#"(?is)<span[^>]*class="[^"]*mw-editsection[^"]*"[^>]*>"#),
@@ -305,6 +310,7 @@ pub fn clean(html: &str, source: &WikiSource) -> String {
 
     let mut out = p.script.replace_all(html, "").to_string();
     out = p.style.replace_all(&out, "").to_string();
+    out = p.noscript.replace_all(&out, "").to_string();
     out = strip_spans(&out, &p.editsection);
     out = p.comment.replace_all(&out, "").to_string();
     out = p.handler.replace_all(&out, "").to_string();
@@ -541,6 +547,23 @@ mod tests {
 
     fn convergence() -> &'static WikiSource {
         source("convergence").unwrap()
+    }
+
+    #[test]
+    fn the_duplicate_image_behind_noscript_is_dropped() {
+        // Fandom ships every gallery image twice: once lazily, once inside a
+        // `<noscript>` a scripted browser never renders. Keeping both doubles
+        // the page for nothing.
+        let html = concat!(
+            r#"<div class="wikia-gallery-item">"#,
+            r#"<noscript><img src="https://x/a.png" alt="dup"></noscript>"#,
+            r#"<img class="lazyload" src="https://x/a.png" alt="real">"#,
+            "</div>"
+        );
+        let out = clean(html, convergence());
+        assert!(!out.contains("<noscript"), "got {out}");
+        assert_eq!(out.matches("<img").count(), 1, "one image survives: {out}");
+        assert!(out.contains(r#"alt="real""#), "and it is the visible one: {out}");
     }
 
     #[test]

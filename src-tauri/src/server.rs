@@ -122,7 +122,17 @@ pub async fn start(app: Arc<AppState>) -> crate::error::Result<Server> {
         .route("/wiki", get(wiki_search))
         .route("/wiki/page", get(wiki_page))
         .route("/wiki/sync", post(wiki_sync))
+        .route("/perf", get(perf_status))
+        .route("/perf/smooth", post(perf_smooth))
+        .route("/perf/set", post(perf_set))
+        .route("/perf/unlock", post(perf_unlock))
+        .route("/tune", get(tune_status).post(tune_apply))
+        .route("/tune/revert", post(tune_revert))
+        .route("/erss", get(erss_status).post(erss_install))
+        .route("/erss/uninstall", post(erss_uninstall))
         .route("/language", get(language_status).post(language_set))
+        .route("/language/edition", post(edition_text_install))
+        .route("/language/edition/revert", post(edition_text_revert))
         .route("/update", get(update_check))
         .route("/diagnose", get(diagnose))
         .route("/match", get(match_fingerprint))
@@ -865,10 +875,322 @@ fn effective_regulation(
     path.is_file().then_some(path)
 }
 
+/// Every folder an FPS unlocker might have been dropped into.
+fn perf_roots(ctx: &Ctx, game: crate::games::Game) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if let Ok(install) = ctx.app.active_install(game) {
+        roots.push(install.game_dir.clone());
+        for spec in crate::edition::for_game(game) {
+            if let Some(found) = resolve(ctx, spec, &install) {
+                roots.push(found.root);
+            }
+        }
+    }
+    roots
+}
+
+async fn perf_status(State(ctx): State<Ctx>, Query(q): Query<GameQ>) -> Response {
+    Json(crate::perf::status(q.game, &perf_roots(&ctx, q.game))).into_response()
+}
+
+async fn perf_smooth(State(ctx): State<Ctx>, Json(body): Json<GameQ>) -> Response {
+    let _ = &ctx;
+    out(crate::perf::smooth(body.game))
+}
+
+#[derive(Deserialize)]
+struct PerfSetBody {
+    game: crate::games::Game,
+    key: String,
+    value: String,
+}
+
+async fn perf_set(State(ctx): State<Ctx>, Json(body): Json<PerfSetBody>) -> Response {
+    let _ = &ctx;
+    out(crate::perf::set(body.game, &body.key, &body.value).map(|()| body.key))
+}
+
+/// Writes the chosen frame cap into the game once it is up.
+///
+/// The patch lives in the running process, so it can only be applied after the
+/// game has started — and the game takes half a minute to get there. This waits
+/// for the process rather than making the user press a button at the right
+/// moment, which is the difference between a built-in unlocker and a tool.
+fn unlock_when_up(ctx: &Ctx, game: crate::games::Game) {
+    let Some(fps) = ctx.app.settings.lock().unlock_fps else {
+        return;
+    };
+    // With the anti-cheat armed this would be a ban, so it is never automatic.
+    if ctx
+        .app
+        .active_install(game)
+        .is_ok_and(|install| install.has_eac && !install.eac_bypassed)
+    {
+        return;
+    }
+
+    tokio::spawn(async move {
+        let executable = game.executable();
+        // Roughly two minutes: a cold start off a hard drive is slow, and the
+        // patch is harmless whenever it lands.
+        for _ in 0..60 {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            if crate::unlock::running_pid(executable).is_none() {
+                continue;
+            }
+            // The module is not mapped the instant the process exists.
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            match crate::unlock::unlock(executable, fps) {
+                Ok(report) => {
+                    tracing::info!(fps = report.fps, "frame cap rewritten");
+                    return;
+                }
+                Err(error) => tracing::debug!(%error, "frame cap not rewritten yet"),
+            }
+        }
+    });
+}
+
+/// Every executable that will actually run the game, so the per-app tweaks land
+/// on the one Windows sees.
+fn launchable(ctx: &Ctx, game: crate::games::Game) -> Vec<PathBuf> {
+    let Ok(install) = ctx.app.active_install(game) else {
+        return Vec::new();
+    };
+
+    let mut out = vec![install.executable.clone()];
+    // The anti-cheat launcher is a copy of the game on a cracked install, and it
+    // is the one that gets started.
+    let protected = install.game_dir.join("start_protected_game.exe");
+    if protected.is_file() {
+        out.push(protected);
+    }
+    // A total conversion runs the same executable through me3, but its own copy
+    // of the folder can hold another.
+    for spec in crate::edition::for_game(game) {
+        if let Some(found) = resolve(ctx, spec, &install) {
+            let exe = found.root.join(game.executable());
+            if exe.is_file() {
+                out.push(exe);
+            }
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// What Windows is set to, and what it should be.
+async fn tune_status(State(ctx): State<Ctx>, Query(q): Query<GameQ>) -> Response {
+    let levers = crate::tune::survey(&launchable(&ctx, q.game));
+    Json(json!({
+        "levers": levers,
+        "competitors": crate::tune::competitors(),
+    }))
+    .into_response()
+}
+
+/// The whole lot: graphics preset, frame cap, and the Windows levers.
+///
+/// One button, and every change comes back as a line. Refused while the
+/// anti-cheat is armed, because a patched process on an online session is a ban.
+async fn tune_apply(State(ctx): State<Ctx>, Json(body): Json<GameQ>) -> Response {
+    if ctx
+        .app
+        .active_install(body.game)
+        .is_ok_and(|install| install.has_eac && !install.eac_bypassed)
+    {
+        return out::<()>(Err(crate::error::Error::msg(
+            "Turn the anti-cheat off first. Patching the game with it armed is a ban.".to_string(),
+        )));
+    }
+
+    let mut done: Vec<String> = Vec::new();
+
+    match crate::perf::smooth(body.game) {
+        Ok(changes) => done.extend(changes),
+        // No config file yet is normal before the first launch, and the Windows
+        // levers are still worth applying.
+        Err(error) => done.push(format!("Graphics settings left alone: {error}")),
+    }
+
+    match crate::tune::apply(&ctx.app.app_data, &launchable(&ctx, body.game)) {
+        Ok(changes) => done.extend(changes),
+        Err(error) => return out::<()>(Err(error)),
+    }
+
+    // The cap this machine holds every frame, saved for the next launch and
+    // written into the game if it is already up.
+    let cap = {
+        let status = crate::perf::status(body.game, &[]);
+        status.machine.suggested_cap
+    };
+    if cap > 60 {
+        {
+            let mut settings = ctx.app.settings.lock();
+            settings.unlock_fps = Some(cap);
+            let _ = settings.save(&ctx.app.app_data);
+        }
+        match crate::unlock::unlock(body.game.executable(), cap) {
+            Ok(report) => done.push(format!("Frame cap raised to {}", report.fps)),
+            Err(_) => done.push(format!("Frame cap set to {cap} for the next launch")),
+        }
+    }
+
+    if crate::unlock::raise_priority(body.game.executable()).is_ok() {
+        done.push("Game moved above the browsers in the scheduler".into());
+    }
+
+    Json(json!({ "changes": done, "competitors": crate::tune::competitors() })).into_response()
+}
+
+/// Puts every Windows change back.
+async fn tune_revert(State(ctx): State<Ctx>) -> Response {
+    out(crate::tune::revert(&ctx.app.app_data))
+}
+
+/// DLSS, frame generation and Reflex, and whether the game is ready for them.
+async fn erss_status(State(ctx): State<Ctx>, Query(q): Query<GameQ>) -> Response {
+    match ctx.app.active_install(q.game) {
+        Ok(install) => Json(crate::erss::status(
+            &install.game_dir,
+            install.has_eac,
+            install.eac_bypassed,
+            crate::tune::gpu_scheduling_on(),
+        ))
+        .into_response(),
+        Err(error) => out::<()>(Err(error)),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ErssBody {
+    game: crate::games::Game,
+    /// Renames the loader so the Steam overlay keeps working.
+    #[serde(default)]
+    steam_overlay: bool,
+    /// The release archives are locked. Used for the unpack and never stored.
+    #[serde(default)]
+    password: Option<String>,
+}
+
+/// Unpacks the mod, after turning on the two things it needs.
+async fn erss_install(State(ctx): State<Ctx>, Json(body): Json<ErssBody>) -> Response {
+    let install = match ctx.app.active_install(body.game) {
+        Ok(install) => install,
+        Err(error) => return out::<()>(Err(error)),
+    };
+
+    let mut done: Vec<String> = Vec::new();
+
+    // The mod cannot load past the anti-cheat, and frame generation will not
+    // start without hardware scheduling. Doing them here is the difference
+    // between a button and a list of instructions.
+    if install.has_eac && !install.eac_bypassed {
+        return out::<()>(Err(crate::error::Error::msg(
+            "Turn the anti-cheat off first — the mod cannot load past it.".to_string(),
+        )));
+    }
+    if !crate::tune::gpu_scheduling_on() {
+        match crate::tune::elevate_gpu_scheduling() {
+            Ok(true) => done.push(
+                "GPU scheduling turned on — restart Windows before frame generation works".into(),
+            ),
+            _ => done.push(
+                "GPU scheduling is still off, so frame generation will not start until it is"
+                    .into(),
+            ),
+        }
+    }
+
+    let archives = crate::erss::find_archives();
+    let password = body.password.as_deref().filter(|p| !p.is_empty());
+    match crate::erss::install(&install.game_dir, &archives, body.steam_overlay, password) {
+        Ok(lines) => done.extend(lines),
+        Err(error) => return out::<()>(Err(error)),
+    }
+
+    // Ray tracing on top of the mod is what makes the global illumination
+    // flicker, and it is the mod author's own first suggestion.
+    if crate::perf::set(body.game, "RaytracingQuality", "DISABLE").is_ok() {
+        done.push("Ray tracing off — it flickers the lighting with this mod".into());
+    }
+    if crate::perf::set(body.game, "GIDataQuality", "LOW").is_ok() {
+        done.push("Global illumination to low, for the same reason".into());
+    }
+
+    Json(json!({ "changes": done })).into_response()
+}
+
+async fn erss_uninstall(State(ctx): State<Ctx>, Json(body): Json<ErssBody>) -> Response {
+    match ctx.app.active_install(body.game) {
+        Ok(install) => out(crate::erss::uninstall(&install.game_dir)),
+        Err(error) => out::<()>(Err(error)),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UnlockBody {
+    game: crate::games::Game,
+    /// 0 puts the shipped 60 cap back.
+    fps: u32,
+}
+
+/// Rewrites the frame cap in the running game.
+///
+/// Refused while the anti-cheat is armed. A patched process on an online session
+/// is a ban, and the point of doing this inside the launcher is that it knows.
+async fn perf_unlock(State(ctx): State<Ctx>, Json(body): Json<UnlockBody>) -> Response {
+    if let Ok(install) = ctx.app.active_install(body.game) {
+        if install.has_eac && !install.eac_bypassed {
+            return out::<()>(Err(crate::error::Error::msg(
+                "Turn the anti-cheat off first. Patching the game with it armed is a ban."
+                    .to_string(),
+            )));
+        }
+    }
+    out(crate::unlock::unlock(body.game.executable(), body.fps))
+}
+
+/// The language, plus whether an installed conversion has text in it.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LanguageReport {
+    #[serde(flatten)]
+    status: crate::language::LanguageStatus,
+    /// One entry per total conversion that is installed and carries its own text.
+    editions: Vec<crate::language::EditionText>,
+}
+
+/// Every installed conversion's text folder, for the language now in force.
+fn edition_texts(ctx: &Ctx, game: crate::games::Game, language: &str) -> Vec<crate::language::EditionText> {
+    let Ok(install) = ctx.app.active_install(game) else {
+        return Vec::new();
+    };
+    crate::edition::for_game(game)
+        .into_iter()
+        .filter_map(|spec| {
+            let found = resolve(ctx, spec, &install)?;
+            crate::language::edition_text(spec.id, &found.root.join("mod"), language)
+        })
+        .collect()
+}
+
 /// What language the emulated Steam is telling the game to use.
 async fn language_status(State(ctx): State<Ctx>, Query(q): Query<GameQ>) -> Response {
     match ctx.app.active_install(q.game) {
-        Ok(install) => Json(crate::language::status(&install.game_dir)).into_response(),
+        Ok(install) => {
+            let status = crate::language::status(&install.game_dir);
+            // The conversion's own text is a separate question from the game's,
+            // and the one people hit second.
+            let editions = match status.current.as_deref() {
+                Some(language) => edition_texts(&ctx, q.game, language),
+                None => Vec::new(),
+            };
+            Json(LanguageReport { status, editions }).into_response()
+        }
         Err(error) => out::<()>(Err(error)),
     }
 }
@@ -885,6 +1207,47 @@ async fn language_set(State(ctx): State<Ctx>, Json(body): Json<LanguageBody>) ->
         Ok(install) => out(crate::language::set(&install.game_dir, &body.language)),
         Err(error) => out::<()>(Err(error)),
     }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EditionTextBody {
+    game: crate::games::Game,
+    edition: String,
+    language: String,
+    /// Absent means the translation Roundtable carries.
+    archive: Option<PathBuf>,
+}
+
+/// Finds an installed conversion's `mod` folder by id.
+fn edition_mod_dir(ctx: &Ctx, game: crate::games::Game, id: &str) -> Result<PathBuf, crate::error::Error> {
+    let install = ctx.app.active_install(game)?;
+    let spec = crate::edition::spec(id)
+        .ok_or_else(|| crate::error::Error::msg(format!("{id} is not an edition")))?;
+    let found = resolve(ctx, spec, &install)
+        .ok_or_else(|| crate::error::Error::msg(format!("{} is not installed", spec.name)))?;
+    Ok(found.root.join("mod"))
+}
+
+/// Puts a conversion's text into the language the game is set to.
+async fn edition_text_install(State(ctx): State<Ctx>, Json(body): Json<EditionTextBody>) -> Response {
+    let dir = match edition_mod_dir(&ctx, body.game, &body.edition) {
+        Ok(dir) => dir,
+        Err(error) => return out::<()>(Err(error)),
+    };
+    out(match body.archive {
+        Some(archive) => crate::language::install_edition_text(&dir, &body.language, &archive),
+        None => crate::language::install_bundled_text(&body.edition, &dir, &body.language),
+    })
+}
+
+/// Puts the conversion's own text back.
+async fn edition_text_revert(State(ctx): State<Ctx>, Json(body): Json<EditionTextBody>) -> Response {
+    let dir = match edition_mod_dir(&ctx, body.game, &body.edition) {
+        Ok(dir) => dir,
+        Err(error) => return out::<()>(Err(error)),
+    };
+    out(crate::language::revert_edition_text(&dir, &body.language))
 }
 
 /// Whether a newer Roundtable has been released.
@@ -1237,7 +1600,10 @@ async fn edition_run(State(ctx): State<Ctx>, Json(body): Json<EditionBody>) -> R
                 return out::<()>(Err(error));
             }
             match crate::launch::spawn(&plan) {
-                Ok(pid) => Json(json!({ "pid": pid, "route": plan.route })).into_response(),
+                Ok(pid) => {
+                    unlock_when_up(&ctx, body.game);
+                    Json(json!({ "pid": pid, "route": plan.route })).into_response()
+                }
                 Err(error) => out::<()>(Err(error)),
             }
         }
@@ -1492,6 +1858,7 @@ async fn launch_run(State(ctx): State<Ctx>, Json(body): Json<LaunchBody>) -> Res
                     }
                     profile.last_played = Some(chrono::Local::now().to_rfc3339());
                     crate::mods::save_profile(&ctx.app.app_data, &profile).ok();
+                    unlock_when_up(&ctx, body.game);
                     Json(json!({
                         "pid": pid,
                         "route": plan.route.label(),

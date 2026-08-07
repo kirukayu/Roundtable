@@ -121,4 +121,8 @@ src-tauri/src/
 `ModEngine2` and `me3` define the loader configs. `EldenRingSaveCopier` and
 `ER-Save-Editor` documented the save container. Seamless Co-op is by LukeYui.
 
+The Russian text for The Convergence is
+[ConvergenceER RU Translation](https://www.nexusmods.com/eldenring/mods/4697) by
+S1RBI, redistributed under its upload permission and installed on request.
+
 Cover art belongs to FromSoftware and Bandai Namco, shown for identification.

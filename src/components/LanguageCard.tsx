@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Icon } from "./Icons";
 import { Card, Chip, useToast } from "./ui";
 import { api } from "../lib/ipc";
-import type { GameId, LanguageStatus } from "../lib/types";
+import type { EditionText, GameId, LanguageStatus } from "../lib/types";
 
 /**
  * The game's language, on a copy that has no Steam to ask.
@@ -95,6 +95,17 @@ export function LanguageCard({ game }: { game: GameId }) {
         ))}
       </div>
 
+      {status.editions.map((edition) => (
+        <EditionTextRow
+          key={edition.edition}
+          game={game}
+          language={status.current ?? "english"}
+          languageName={label ?? status.current ?? "this language"}
+          text={edition}
+          onDone={load}
+        />
+      ))}
+
       <hr className="hr" />
 
       <div className="col2">
@@ -115,5 +126,107 @@ export function LanguageCard({ game }: { game: GameId }) {
         {status.selector && " This copy also ships its own language picker."}
       </p>
     </Card>
+  );
+}
+
+/**
+ * A total conversion's own text.
+ *
+ * Setting the game to Russian does nothing for these: The Convergence ships one
+ * English archive copied into all fourteen locale folders, so every item and
+ * menu reads English on a Russian game. Roundtable carries the translation, so
+ * fixing it is a button rather than an account, a download and a folder.
+ */
+function EditionTextRow({
+  game,
+  language,
+  languageName,
+  text,
+  onDone,
+}: {
+  game: GameId;
+  language: string;
+  languageName: string;
+  text: EditionText;
+  onDone: () => Promise<void>;
+}) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+
+  // Nothing to say when the text already reads in the right language and there
+  // is no way back to the original.
+  if (text.translated && !text.revertible) return null;
+
+  const name = text.edition === "convergence" ? "The Convergence" : text.edition;
+
+  const run = async (revert: boolean) => {
+    setBusy(true);
+    try {
+      const files = revert
+        ? await api.editionTextRevert(game, text.edition, language)
+        : await api.editionTextInstall(game, text.edition, language);
+      toast.success(
+        revert ? "Original text restored" : "Translation installed",
+        `${files.length} file${files.length === 1 ? "" : "s"} in ${text.locale}`,
+      );
+      await onDone();
+    } catch (error) {
+      toast.error("Could not apply", error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (text.translated) {
+    return (
+      <div className="between" style={{ marginTop: "var(--s3)" }}>
+        <span className="w3" style={{ fontSize: "var(--t-sm)" }}>
+          {name} is translated
+        </span>
+        <button
+          type="button"
+          className="btn btn--sm"
+          disabled={busy}
+          onClick={() => void run(true)}
+        >
+          {busy ? <span className="spin" /> : null}
+          Restore original text
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="note note--warn" style={{ marginTop: "var(--s4)" }}>
+      <Icon.Warning size={15} />
+      <div style={{ flex: 1 }}>
+        <div className="note__t">
+          {name} has no {languageName} text
+        </div>
+        <div className="note__b">
+          The mod replaces every item and menu with its own English text, so the
+          game reads English even though it is set to {languageName}.
+          {text.bundled && (
+            <>
+              {" "}
+              Roundtable carries the translation ({text.bundled.version}) by{" "}
+              {text.bundled.author}.
+            </>
+          )}
+        </div>
+        {text.bundled && (
+          <button
+            type="button"
+            className="btn btn--solid btn--sm"
+            style={{ marginTop: "var(--s3)" }}
+            disabled={busy}
+            onClick={() => void run(false)}
+          >
+            {busy ? <span className="spin" /> : null}
+            Install {languageName}
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
