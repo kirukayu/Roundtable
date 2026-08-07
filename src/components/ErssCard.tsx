@@ -29,6 +29,7 @@ export function ErssCard({ game }: { game: GameId }) {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string[]>([]);
   const [fixes, setFixes] = useState<string[]>([]);
+  const [all, setAll] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -282,9 +283,17 @@ export function ErssCard({ game }: { game: GameId }) {
 
       {/*
         The mod's own settings, changed here rather than in its in-game overlay.
-        Turning frame generation on needs a restart anyway, so setting it before
-        the game starts is the shorter path — and the values are read back out of
-        its own file, so this stays right as the mod grows new ones.
+
+        Which is the point of the whole pane: the player should never need to
+        press a key in game to reach any of this. What broke that before was
+        that these live in TOML sections — `[Renderer]`, `[DLSS]`,
+        `[FrameGeneration]` — and only the top of the file was being read, so
+        the pane showed four settings nobody cares about and every change landed
+        on a key the mod does not read.
+
+        Split in two: the handful somebody actually came here for, and the rest
+        folded away. Nothing is hidden, because a launcher that silently drops
+        half a config is worse than no launcher.
       */}
       {status.installed && status.settings.length > 0 && (
         <>
@@ -294,26 +303,61 @@ export function ErssCard({ game }: { game: GameId }) {
               Its settings
             </span>
             <span className="w4" style={{ fontSize: "var(--t-2xs)" }}>
-              Frame generation needs a restart
+              Nothing here needs the in-game overlay
             </span>
           </div>
+
           <div className="col2">
-            {status.settings.map((setting) => (
-              <ErssSettingRow
-                key={setting.key}
-                game={game}
-                setting={setting}
-                onDone={load}
-                disabled={busy}
-              />
-            ))}
+            {status.settings
+              .filter((setting) => setting.described)
+              .map((setting) => (
+                <ErssSettingRow
+                  key={setting.key}
+                  game={game}
+                  setting={setting}
+                  onDone={load}
+                  disabled={busy}
+                />
+              ))}
           </div>
-          <p className="w4" style={{ fontSize: "var(--t-2xs)", marginTop: "var(--s3)", lineHeight: 1.6 }}>
-            The rest of them — which upscaler, whether frames are generated, HDR — appear
-            here after the game has run once with the mod loaded. It names them itself
-            the first time, and Roundtable reads whatever it finds rather than assuming.
-          </p>
+
+          {status.settings.some((setting) => !setting.described) && (
+            <>
+              <button
+                type="button"
+                className="ov__wipe"
+                style={{ marginTop: "var(--s3)", fontSize: "var(--t-2xs)" }}
+                onClick={() => setAll((was) => !was)}
+              >
+                {all ? "Fewer settings" : `Everything else (${status.settings.filter((s) => !s.described).length})`}
+              </button>
+
+              {all && (
+                <div className="col2" style={{ marginTop: "var(--s3)" }}>
+                  {status.settings
+                    .filter((setting) => !setting.described)
+                    .map((setting) => (
+                      <ErssSettingRow
+                        key={setting.key}
+                        game={game}
+                        setting={setting}
+                        onDone={load}
+                        disabled={busy}
+                      />
+                    ))}
+                </div>
+              )}
+            </>
+          )}
         </>
+      )}
+
+      {status.installed && status.settings.length === 0 && (
+        <p className="w4" style={{ fontSize: "var(--t-xs)", marginTop: "var(--s3)", lineHeight: 1.7 }}>
+          Start the game once and everything it can do appears here — the upscaler, frame
+          generation, Reflex, HDR. It writes its own settings the first time it loads, and
+          Roundtable reads whatever it finds rather than assuming.
+        </p>
       )}
 
       {done.length > 0 && (
@@ -374,6 +418,11 @@ function ErssSettingRow({
     <div className="between" title={setting.detail}>
       <span className="w3" style={{ fontSize: "var(--t-sm)" }}>
         {setting.title}
+        {setting.restart && (
+          <span className="w4" style={{ fontSize: "var(--t-2xs)", marginLeft: "var(--s2)" }}>
+            next launch
+          </span>
+        )}
       </span>
 
       {setting.kind === "bool" && (

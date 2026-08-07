@@ -1315,56 +1315,103 @@ fn no_artefacts(game: crate::games::Game, dir: &std::path::Path) -> Vec<String> 
     // The mod writes its own config on first run, so before then there is
     // nothing to change — seeding it is what makes this work on a fresh install.
     let _ = crate::erss::seed(dir);
-
-    // Whether it is generating frames decides both of the answers below, and it
-    // is knowable once it has run: the setting is in its own config.
-    let framegen = crate::erss::setting_titled(dir, "Frame generation")
-        .as_ref()
-        .is_some_and(crate::erss::switched_on);
-
-    let (mode, label) = crate::erss::best_dlss_mode(machine.tier, pixels, framegen);
-    if crate::erss::set_setting(dir, "DLSSMode", mode).is_ok() {
+    for stray in crate::erss::tidy(dir) {
         applied.push(format!(
-            "DLSS at {label} — upscaling artefacts and generated frames compound, so it \
-             reconstructs as little as this card allows"
+            "{stray} removed from the top of its config — an earlier Roundtable put it \
+             there and the mod never read it"
         ));
     }
-    // Generation is what buys the room to upscale less, so the answer above is
-    // a different one once it is switched on.
+
+    // Shut the mod's own overlay and its startup notice. Everything it offers
+    // is on this page, so a "press Home to close" banner over somebody's game
+    // is a notice about a feature they do not need to know exists.
+    if !crate::erss::quieten(dir).is_empty() {
+        applied.push(
+            "Its in-game overlay and notices switched off — nothing about the mod shows              on screen any more"
+                .into(),
+        );
+    }
+
+    let set = |key: &str, value: &str| crate::erss::set_setting(dir, key, value).is_ok();
+    let reading = |key: &str| {
+        crate::erss::settings(dir)
+            .into_iter()
+            .find(|setting| setting.key == key)
+            .map(|setting| setting.value)
+    };
+
+    // Nothing below is worth saying until the mod has written its config, and
+    // that only happens once the game has run with it loaded.
+    if reading("Renderer.ScalingMode").is_none() {
+        applied.push(
+            "Start the game once with the mod loaded and press this again — until then it \
+             has not written the settings that matter, and only the game's own are here"
+                .into(),
+        );
+        return applied;
+    }
+
+    // The upscaler goes on. It is separate from frame generation and always
+    // was, which the pane could not show because it never reached either.
+    if set("Renderer.ScalingMode", "DLSS") {
+        applied.push(
+            "DLSS on — the game has no upscaler of its own, and this is the whole reason \
+             the mod is here"
+                .into(),
+        );
+    }
+
+    // Reflex, which is what gives back the latency generation costs.
+    if set("Renderer.LatencyReductionMode", "1") {
+        applied.push(
+            "Reflex on — frame generation adds a frame of delay and this takes it back off"
+                .into(),
+        );
+    }
+
+    // The author's own workaround for the one artefact this mod is known for.
+    if set("FrameGeneration.GIGlitchMitigation", "1") {
+        applied.push(
+            "Global illumination fix on — the flicker in shaded rooms is this mod's one \
+             real artefact and this is the author's answer to it"
+                .into(),
+        );
+    }
+
+    let framegen = reading("FrameGeneration.FrameGenMode").is_some_and(|mode| mode != "0");
+
+    // How far it upscales, which depends on whether generation is carrying half
+    // the frames — upscaling artefacts and generated frames compound.
+    let (mode, label) = crate::erss::best_dlss_mode(machine.tier, pixels, framegen);
+    if set("DLSS.DLSSMode", mode) {
+        applied.push(format!(
+            "DLSS at {label} — reconstruction artefacts and generated frames compound, so \
+             it renders as close to full resolution as this card allows"
+        ));
+    }
     if !framegen {
         let (_, with) = crate::erss::best_dlss_mode(machine.tier, pixels, true);
         if with != label {
             applied.push(format!(
-                "Turn frame generation on in its overlay, then press Tune again — there is \
+                "Frame generation is off. Turn it on above and press this again — there is \
                  room for {with} once it is carrying half the frames"
             ));
         }
     }
 
     // The mod owns the frame limit and counts finished frames, so a generator
-    // doubling the rate is already in the number. It ships at 60, which is why
-    // frame generation so often appears to do nothing at all.
+    // doubling the rate is already in the number. It ships at zero or sixty,
+    // which is why generation so often appears to do nothing at all.
     let target = if framegen {
         crate::perf::suggested_cap_generated(machine.refresh_hz, machine.tier)
     } else {
         machine.suggested_cap
     };
-    match crate::erss::setting_titled(dir, "Frame limit") {
-        Some(limit) => {
-            if crate::erss::set_setting(dir, &limit.key, &target.to_string()).is_ok() {
-                applied.push(format!(
-                    "{target} frames — a card held at its ceiling starves the generator, \
-                     which runs on the same shaders, and an even rate under the panel is \
-                     what stops the flicker"
-                ));
-            }
-        }
-        None => applied.push(
-            "Its frame limit ships at 60 and is the usual reason frame generation looks \
-             like it did nothing. It appears here once the game has run with the mod \
-             loaded, and this will set it then"
-                .into(),
-        ),
+    if set("Renderer.RemoveFPSLimit", "true") && set("Renderer.MaxFPS", &target.to_string()) {
+        applied.push(format!(
+            "{target} frames — a card held at its ceiling starves the generator, which runs \
+             on the same shaders, and an even rate under the panel is what stops the tearing"
+        ));
     }
 
     applied

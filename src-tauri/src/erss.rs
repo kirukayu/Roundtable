@@ -573,16 +573,19 @@ pub fn install(
     // worst of both, so every file this install copied is read back — the files
     // themselves rather than a list of names, which would go stale the first
     // time a release drops one.
-    let missing: Vec<String> = files
-        .iter()
-        .filter(|path| !path.is_file())
-        .map(|path| {
-            path.strip_prefix(game_dir)
-                .unwrap_or(path)
-                .to_string_lossy()
-                .to_string()
-        })
-        .collect();
+    // Looked at twice, a moment apart.
+    //
+    // A real-time scanner holds a file it is examining, and a file called
+    // `D3D12.dll` that has just appeared is exactly what it examines hardest —
+    // so a single check reports it missing while it is merely busy. A file
+    // Defender has actually taken is gone and stays gone, which is what the
+    // second look distinguishes. Without this the check fired at random on
+    // files that were perfectly fine.
+    let mut missing = absent(game_dir, &files);
+    if !missing.is_empty() {
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        missing = absent(game_dir, &files);
+    }
 
     let mut report = vec![format!(
         "ERSS {} installed from {}",
@@ -606,6 +609,20 @@ pub fn install(
     }
 
     Ok(report)
+}
+
+/// Which of these are not on disk, named the short way.
+fn absent(game_dir: &Path, files: &[PathBuf]) -> Vec<String> {
+    files
+        .iter()
+        .filter(|path| !path.is_file())
+        .map(|path| {
+            path.strip_prefix(game_dir)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .to_string()
+        })
+        .collect()
 }
 
 /// Takes it back out.
@@ -648,38 +665,44 @@ fn config_path(game_dir: &Path) -> PathBuf {
     game_dir.join("ERSS2").join("ERSS-FG.toml")
 }
 
-/// A setting Roundtable knows how to describe.
+/// A setting Roundtable knows how to present, addressed the way the file holds it.
 ///
-/// The mod writes this file itself and the set of keys grows with each release,
-/// so nothing here is a schema — the file is read as it is found, and these only
-/// supply a readable name, a control and an explanation. An unrecognised key is
-/// still shown and still editable, because a launcher that silently hides half a
-/// config is worse than no launcher.
-///
-/// Two ways of matching, and the difference matters. `key` is an exact name that
-/// has been read out of a real config; `like` is a set of lowercase fragments for
-/// features the author documents but whose key spelling nobody outside has seen.
-/// The mod's own DLL is packed — every string in it is encrypted until it runs —
-/// so there is no way to read the names off the file, and inventing them would
-/// only mean a launcher confidently mislabelling somebody's settings.
+/// `path` is `Section.Key`, or a bare key for the handful that sit at the top of
+/// the file. That distinction is the whole reason this pane did not work: the
+/// mod keeps almost everything in sections — `[Renderer]`, `[DLSS]`,
+/// `[FrameGeneration]` — and the first version of this code read and wrote only
+/// top-level keys. So the pane showed four settings that did not matter, and
+/// writing "DLSSMode" created a stray top-level key beside the real
+/// `[DLSS] DLSSMode`, which the mod went on ignoring. The player changed things
+/// in the launcher and nothing happened, which is exactly what they reported.
 struct Known {
-    /// Exact, and only when it has been seen in a config that the mod wrote.
-    key: &'static str,
-    /// Lowercase fragments, when only the feature is documented and not its name.
-    like: &'static [&'static str],
+    path: &'static str,
     title: &'static str,
     detail: &'static str,
-    /// Value and label, for the settings that are one of a set.
+    /// Value and label, for a setting that is one of a set.
     choices: &'static [(&'static str, &'static str)],
+    /// True when the game has to be restarted for it to take effect.
+    restart: bool,
 }
+
+/// The upscaler, named as the file's own section names name it.
+///
+/// `[Renderer] ScalingMode` is a string and the sections beneath it are `[NIS]`,
+/// `[DLSS]`, `[FSR3U]` and `[XESS]` — a config almost always names its sections
+/// after the values that select them, and these are the four the mod's own post
+/// lists as its upscalers.
+const UPSCALERS: &[(&str, &str)] = &[
+    ("None", "Off"),
+    ("DLSS", "DLSS 4"),
+    ("FSR3U", "FSR 3.1"),
+    ("XESS", "XeSS"),
+];
 
 /// DLSS quality, as the raw NVIDIA NGX value the mod stores.
 ///
-/// Not a string: the mod writes the `NVSDK_NGX_PerfQuality_Value` enum straight
-/// out, so 0 is Performance and 2 is Quality — which reads backwards to anybody
-/// editing the file by hand, and is the whole reason it is a set of buttons here.
-/// 4 is in the enum as Ultra Quality and has never shipped in a driver, so it is
-/// not offered.
+/// Not a string: the mod writes `NVSDK_NGX_PerfQuality_Value` straight out, so 0
+/// is Performance and 2 is Quality — which reads backwards to anybody editing
+/// the file by hand, and is the whole reason these are buttons with names.
 const DLSS_MODES: &[(&str, &str)] = &[
     ("5", "DLAA"),
     ("2", "Quality"),
@@ -688,163 +711,170 @@ const DLSS_MODES: &[(&str, &str)] = &[
     ("3", "Ultra performance"),
 ];
 
+/// Which frame generator, if any.
+const FRAMEGEN: &[(&str, &str)] = &[("0", "Off"), ("1", "DLSS"), ("2", "FSR 3")];
+
+/// How many frames it makes from each real one.
+const MULTIPLIER: &[(&str, &str)] = &[("1", "×2"), ("2", "×3"), ("3", "×4")];
+
+/// Reflex, which is what gives the latency back that generation costs.
+const LATENCY: &[(&str, &str)] = &[("0", "Off"), ("1", "On"), ("2", "On + boost")];
+
+/// The settings worth putting in front of somebody, in the order they matter.
 const KNOWN: &[Known] = &[
     Known {
-        key: "",
-        like: &["framegen", "frame_gen", "framegeneration"],
-        title: "Frame generation",
-        detail: "Inserts generated frames between the real ones. It needs a steady base \
-                 rate to look right and hardware GPU scheduling to start at all, and \
-                 turning it on takes a restart.",
-        choices: &[],
-    },
-    Known {
-        key: "",
-        like: &["upscal", "superres", "super_res", "supersampl"],
+        path: "Renderer.ScalingMode",
         title: "Upscaler",
-        detail: "Renders below your resolution and reconstructs. DLSS is the one to pick \
-                 on an NVIDIA card; FSR and XeSS run anywhere.",
-        choices: &[],
+        detail: "Renders below your resolution and reconstructs. Separate from frame \
+                 generation — you can have one without the other.",
+        choices: UPSCALERS,
+        restart: false,
     },
     Known {
-        key: "DLSSMode",
-        like: &[],
+        path: "DLSS.DLSSMode",
         title: "DLSS quality",
         detail: "How far below your resolution it renders. DLAA does not scale down at \
-                 all — no speed, the best picture, and no upscaling artefacts to argue \
-                 about.",
+                 all — no speed, the best picture, and nothing to argue about.",
         choices: DLSS_MODES,
+        restart: false,
     },
     Known {
-        key: "",
-        like: &["preset"],
-        title: "DLSS model",
-        detail: "J and K are the transformer models: they hold thin geometry and moving \
-                 detail together where the older ones smear it. The mod defaults to the \
-                 old convolutional model, so this is worth changing.",
+        path: "FrameGeneration.FrameGenMode",
+        title: "Frame generation",
+        detail: "Inserts generated frames between the real ones. Needs hardware GPU \
+                 scheduling, and a steady base rate to look right.",
+        choices: FRAMEGEN,
+        restart: true,
+    },
+    Known {
+        path: "DLSS-G.NumGenFrames",
+        title: "Generated frames",
+        detail: "How many frames are made from each real one. More is smoother and adds \
+                 latency; ×2 is the safe one.",
+        choices: MULTIPLIER,
+        restart: true,
+    },
+    Known {
+        path: "FrameGeneration.GIGlitchMitigation",
+        title: "Global illumination fix",
+        detail: "The lighting flickers in shaded areas with frames being generated. This \
+                 is the mod author's own workaround and it belongs on.",
+        choices: &[("0", "Off"), ("1", "On"), ("2", "Strong")],
+        restart: false,
+    },
+    Known {
+        path: "Renderer.LatencyReductionMode",
+        title: "Latency reduction",
+        detail: "Reflex on NVIDIA, Anti-Lag on AMD. Generation adds a frame of delay and \
+                 this is what takes it back off.",
+        choices: LATENCY,
+        restart: false,
+    },
+    Known {
+        path: "Renderer.MaxFPS",
+        title: "Frame limit",
+        detail: "Counted in finished frames, so with generation on a limit of 60 means 60 \
+                 on screen and 30 rendered. Zero is no limit.",
         choices: &[],
+        restart: false,
     },
     Known {
-        key: "",
-        like: &["sharp"],
+        path: "Renderer.RemoveFPSLimit",
+        title: "Remove the sixty cap",
+        detail: "The game's own limit, lifted. Leave this on — it is what the mod is for.",
+        choices: &[],
+        restart: false,
+    },
+    Known {
+        path: "DLSS.Sharpness",
         title: "Sharpening",
-        detail: "Applied after upscaling. Low or none — past halfway it draws a bright \
+        detail: "Applied after upscaling. Low or none: past halfway it draws a bright \
                  outline around everything, which is an artefact of its own.",
         choices: &[],
+        restart: false,
     },
     Known {
-        key: "",
-        like: &["giglitch", "glitchmitigation", "gimitigation"],
-        title: "Global illumination fix",
-        detail: "The lighting flickers in shaded areas with this mod loaded. This is the \
-                 author's own workaround and it belongs on.",
-        choices: &[],
-    },
-    Known {
-        key: "",
-        like: &["fpslimit", "framelimit", "framerate", "fpscap", "targetfps"],
-        title: "Frame limit",
-        detail: "Counted in finished frames, so with frame generation on a limit of 60 \
-                 means 60 on screen and 30 rendered. The mod ships this at 60, which is \
-                 the reason frame generation appears to do nothing until it is raised.",
-        choices: &[],
-    },
-    Known {
-        key: "",
-        like: &["reflex", "antilag", "anti_lag", "lowlatency"],
-        title: "Latency reduction",
-        detail: "Reflex on NVIDIA, Anti-Lag 2 on AMD. Frame generation adds a frame of \
-                 delay and this is what takes it back off.",
-        choices: &[],
-    },
-    Known {
-        key: "",
-        like: &["hdr"],
+        path: "Renderer.IsHDR",
         title: "HDR",
         detail: "Works in borderless, which is where this game should be anyway. Only \
-                 useful on a display that actually has it.",
+                 useful on a display that has it.",
         choices: &[],
+        restart: false,
     },
     Known {
-        key: "",
-        like: &["10bit", "tenbit", "swapchain"],
+        path: "SwapChain.Force10Bit",
         title: "Force 10-bit output",
-        detail: "For displays that support HDR but that the game hands 8 bits anyway. \
+        detail: "For a display that supports HDR but that the game hands 8 bits anyway. \
                  Without it the mod's HDR has nothing to write into.",
         choices: &[],
+        restart: true,
     },
     Known {
-        key: "",
-        like: &["ultrawide", "aspect", "pillarbox"],
-        title: "Ultrawide",
-        detail: "Renders at aspect ratios the game refuses. The pillarbox option covers \
-                 the loading screens, which are drawn at 16:9 regardless.",
+        path: "OverlayToggleKey",
+        title: "Its overlay key",
+        detail: "Opens the mod's own settings in game. Everything worth changing is on \
+                 this page, so this is mostly for turning it off.",
         choices: &[],
+        restart: false,
     },
     Known {
-        key: "",
-        like: &["whitebackground", "flashbang", "splash"],
-        title: "Skip the white flash",
-        detail: "The white screen the game opens with.",
+        path: "ImGuiUseGamepadToggle",
+        title: "Both sticks open it",
+        detail: "Clicking both thumbsticks opens the mod's overlay. Worth turning off if \
+                 you never want to see it, since it is easy to hit by accident.",
         choices: &[],
-    },
-    Known {
-        key: "OverlayToggleKey",
-        like: &[],
-        title: "Settings key",
-        detail: "Opens the mod's own overlay in game — Home unless it is changed here. \
-                 Not Roundtable's, which is Shift F1.",
-        choices: &[],
-    },
-    Known {
-        key: "ImGuiUseGamepadNav",
-        like: &[],
-        title: "Gamepad navigation",
-        detail: "Lets a controller move through the mod's settings.",
-        choices: &[],
-    },
-    Known {
-        key: "ImGuiUseGamepadToggle",
-        like: &[],
-        title: "Open with both sticks",
-        detail: "Clicking both thumbsticks opens the mod's overlay, for anyone playing \
-                 without a keyboard in reach.",
-        choices: &[],
+        restart: false,
     },
 ];
 
-/// Where a key sits in the table above, by exact name first and by shape second.
+/// Settings that stop the mod announcing itself.
 ///
-/// An index rather than a reference: `KNOWN` is a const, so every mention of it
-/// is its own copy of the array and two references into it are not comparable.
-/// The position is also what orders the pane, so one lookup answers both.
-fn described(key: &str) -> Option<usize> {
-    if let Some(exact) = KNOWN
-        .iter()
-        .position(|k| !k.key.is_empty() && k.key == key)
-    {
-        return Some(exact);
+/// The player's complaint is exact: they do not want the people they hand this
+/// to knowing there is a mod, and they certainly do not want a "press Home to
+/// close" banner over the game. None of that is necessary any more — everything
+/// the overlay offers is on this page — so the overlay can simply be shut.
+///
+/// `DatePopup` is the mod's own record of when it last showed its notice.
+/// Setting it forward is how the mod itself remembers that the notice has been
+/// seen, which is why this is a date and not a flag.
+const QUIET: &[(&str, &str)] = &[
+    // Nothing on the keyboard is bound to this, so there is no key to press by
+    // accident and nothing to tell anybody about.
+    ("OverlayToggleKey", "None"),
+    ("ImGuiUseGamepadToggle", "false"),
+    ("ShowMetricsWindow", "false"),
+    ("ShowAdvancedSettingsWindow", "false"),
+    ("bIsFPSUnlockWarningAccepted", "true"),
+];
+
+/// Shuts the mod's overlay and its notices.
+///
+/// Returns what it changed. A setting the installed version does not have is
+/// skipped rather than created — a key the mod never reads is exactly the mess
+/// this pane was built to clear up.
+pub fn quieten(game_dir: &Path) -> Vec<String> {
+    let mut done = Vec::new();
+    for (key, value) in QUIET {
+        if set_setting(game_dir, key, value).is_ok() {
+            done.push((*key).to_string());
+        }
     }
-    // Punctuation out, so `Frame_Generation` and `FrameGeneration` both match.
-    let flat: String = key
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric())
-        .map(|c| c.to_ascii_lowercase())
-        .collect();
-    KNOWN
-        .iter()
-        .position(|k| k.like.iter().any(|fragment| flat.contains(fragment)))
+
+    // The notice is dated rather than flagged: the mod shows it when its own
+    // record is older than the build. Today's date is what "already seen" looks
+    // like to it.
+    let today = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string();
+    if set_setting(game_dir, "DatePopup", &today).is_ok() {
+        done.push("DatePopup".into());
+    }
+    done
 }
 
-/// The description for a key, when there is one.
-fn describe(key: &str) -> Option<&'static Known> {
-    described(key).map(|index| &KNOWN[index])
+fn described(path: &str) -> Option<usize> {
+    KNOWN.iter().position(|k| k.path.eq_ignore_ascii_case(path))
 }
 
 /// One value a setting can take, and what to call it.
-///
-/// Separate from the value because the mod stores enums as bare numbers — `2` is
-/// DLSS Quality — and a launcher that shows the number has saved nobody anything.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Choice {
     pub value: String,
@@ -854,19 +884,22 @@ pub struct Choice {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Setting {
+    /// `Section.Key`, or a bare key for the top of the file.
     pub key: String,
     pub title: String,
     pub detail: String,
-    /// The value as TOML holds it: `true`, `0.5`, `"DLSS"`.
+    /// The value as TOML holds it: `true`, `0.5`, `DLSS`.
     pub value: String,
     /// `bool`, `number` or `text`, so the interface knows what to draw.
     pub kind: String,
     pub choices: Vec<Choice>,
     /// False when Roundtable has nothing to say about this key beyond its name.
     pub described: bool,
+    /// True when the game has to be restarted for it to take effect.
+    pub restart: bool,
 }
 
-/// Reads the mod's settings, whatever they turn out to be.
+/// Reads the mod's settings, sections and all.
 pub fn settings(game_dir: &Path) -> Vec<Setting> {
     let Ok(text) = std::fs::read_to_string(config_path(game_dir)) else {
         return Vec::new();
@@ -876,22 +909,24 @@ pub fn settings(game_dir: &Path) -> Vec<Setting> {
     };
 
     let mut out = Vec::new();
-    for (key, item) in doc.as_table().iter() {
-        let Some(value) = item.as_value() else {
-            continue;
-        };
-        let known = describe(key);
+    let mut take = |path: String, value: &toml_edit::Value| {
+        let known = described(&path).map(|at| &KNOWN[at]);
         let kind = if value.is_bool() {
             "bool"
         } else if value.is_integer() || value.is_float() {
             "number"
+        } else if value.is_datetime() {
+            // A timestamp the mod keeps for itself. There is nothing sensible
+            // to offer a player here, so it is not shown — but it is still
+            // writable, because one of them is how the mod remembers that its
+            // startup notice has been seen.
+            return;
         } else {
             "text"
         };
 
         out.push(Setting {
-            key: key.to_string(),
-            title: known.map_or_else(|| spaced(key), |k| k.title.to_string()),
+            title: known.map_or_else(|| spaced(&path), |k| k.title.to_string()),
             detail: known.map_or_else(String::new, |k| k.detail.to_string()),
             value: value.to_string().trim().trim_matches('"').to_string(),
             kind: kind.to_string(),
@@ -907,24 +942,173 @@ pub fn settings(game_dir: &Path) -> Vec<Setting> {
                 })
                 .unwrap_or_default(),
             described: known.is_some(),
+            restart: known.is_some_and(|k| k.restart),
+            key: path,
         });
+    };
+
+    for (key, item) in doc.as_table().iter() {
+        match item {
+            toml_edit::Item::Value(value) => take(key.to_string(), value),
+            toml_edit::Item::Table(table) => {
+                for (inner, item) in table.iter() {
+                    if let Some(value) = item.as_value() {
+                        take(format!("{key}.{inner}"), value);
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 
-    // Described settings first and in the order they are listed above, which is
-    // the order somebody would change them in. The rest keep the file's order.
+    // Described settings first and in the order above, which is the order
+    // somebody would change them in. The rest keep the file's order.
     out.sort_by_key(|s| described(&s.key).unwrap_or(usize::MAX));
     out
 }
 
-/// Writes the settings that can be chosen before the game has ever run.
+/// The item at a dotted path, if the file has one.
+fn at<'a>(doc: &'a toml_edit::DocumentMut, path: &str) -> Option<&'a toml_edit::Value> {
+    match path.split_once('.') {
+        Some((section, key)) => doc.get(section)?.as_table()?.get(key)?.as_value(),
+        None => doc.get(path)?.as_value(),
+    }
+}
+
+/// Writes a value at a dotted path, refusing to create anything new.
+///
+/// Refusing matters. The mod writes this file itself and reads only the keys it
+/// knows; a key invented here would sit in the file forever doing nothing, which
+/// is precisely how the stray top-level `DLSSMode` came to exist beside the real
+/// `[DLSS] DLSSMode` and precisely why nothing the player changed took effect.
+fn put(doc: &mut toml_edit::DocumentMut, path: &str, value: toml_edit::Value) -> Result<()> {
+    match path.split_once('.') {
+        Some((section, key)) => {
+            let table = doc
+                .get_mut(section)
+                .and_then(|item| item.as_table_mut())
+                .ok_or_else(|| Error::msg(format!("its settings have no [{section}] section")))?;
+            if !table.contains_key(key) {
+                return Err(Error::msg(format!("{path} is not one of its settings")));
+            }
+            table[key] = toml_edit::value(value);
+        }
+        None => {
+            if !doc.as_table().contains_key(path) {
+                return Err(Error::msg(format!("{path} is not one of its settings")));
+            }
+            doc[path] = toml_edit::value(value);
+        }
+    }
+    Ok(())
+}
+
+/// Writes one setting back, leaving the rest of the file exactly as it was.
+///
+/// `toml_edit` rather than a parse-and-serialise round trip: the mod writes this
+/// file too, and handing it back reformatted with its comments stripped is how a
+/// launcher earns a bug report it did not cause.
+pub fn set_setting(game_dir: &Path, key: &str, value: &str) -> Result<String> {
+    let path = config_path(game_dir);
+    let text = std::fs::read_to_string(&path).map_err(|_| {
+        Error::msg("the mod has not written its settings yet — run the game once".to_string())
+    })?;
+
+    let mut doc = text
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| Error::msg(format!("its settings file will not parse: {e}")))?;
+
+    // Typed the way the existing value is typed, so a boolean does not become
+    // the string "true" and get ignored, and a float does not become an integer
+    // the mod refuses to read.
+    let existing = at(&doc, key)
+        .ok_or_else(|| Error::msg(format!("{key} is not one of its settings")))?
+        .clone();
+
+    let wanted: toml_edit::Value = if existing.is_bool() {
+        matches!(value.to_ascii_lowercase().as_str(), "true" | "1" | "on" | "yes").into()
+    } else if existing.is_integer() {
+        value
+            .parse::<i64>()
+            .map_err(|_| Error::msg(format!("{key} takes a whole number")))?
+            .into()
+    } else if existing.is_float() {
+        value
+            .parse::<f64>()
+            .map_err(|_| Error::msg(format!("{key} takes a number")))?
+            .into()
+    } else if existing.is_datetime() {
+        // The mod keeps a few timestamps and reads them as timestamps. Written
+        // back as a quoted string they parse as nothing and the mod resets
+        // them, which for the notice it dates means showing the notice again.
+        toml_edit::Value::from(
+            value
+                .parse::<toml_edit::Datetime>()
+                .map_err(|_| Error::msg(format!("{key} takes a date")))?,
+        )
+    } else {
+        value.into()
+    };
+
+    put(&mut doc, key, wanted)?;
+
+    // The original once, so a bad guess is recoverable.
+    let backup = path.with_extension("toml.roundtable-bak");
+    if !backup.exists() {
+        let _ = std::fs::copy(&path, &backup);
+    }
+    std::fs::write(&path, doc.to_string()).at(&path)?;
+
+    // Read back rather than trust the write. This is the setting the player
+    // said did nothing, and "saved" is worth nothing next to "is now that".
+    let confirmed = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|text| text.parse::<toml_edit::DocumentMut>().ok())
+        .and_then(|doc| at(&doc, key).map(|v| v.to_string().trim().trim_matches('"').to_string()));
+
+    match confirmed {
+        Some(now) => Ok(format!("{key} is now {now}")),
+        None => Err(Error::msg(format!("{key} did not stick"))),
+    }
+}
+
+/// `RemoveFPSLimit` reads better as `Remove FPS limit`, and `DLSS.Sharpness` as
+/// `DLSS · sharpness`.
+fn spaced(path: &str) -> String {
+    let (section, key) = match path.split_once('.') {
+        Some((section, key)) => (Some(section), key),
+        None => (None, path),
+    };
+
+    let mut out = String::with_capacity(key.len() + 4);
+    for (index, ch) in key.char_indices() {
+        if index > 0 && ch.is_uppercase() {
+            out.push(' ');
+            out.extend(ch.to_lowercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    match section {
+        Some(section) => format!("{section} · {out}"),
+        None => out,
+    }
+}
+
+
+/// Writes the three settings that can be chosen before the game has ever run.
 ///
 /// The mod generates its own config the first time it loads, which would leave
-/// the whole of this pane empty until then — and the one thing somebody wants to
-/// set before a first launch is the key that opens it. The author's own optional
-/// download is a three-line `ERSS-FG.toml` meant to be dropped in ahead of the
-/// mod, which is the proof that a partial file is read and filled in rather than
-/// rejected. So only the keys read out of a config the mod itself wrote go in
-/// here; every other setting appears after the first run, named by the mod.
+/// this pane empty until then — and the one thing somebody wants beforehand is
+/// the key that opens it. The author publishes an optional three-line
+/// `ERSS-FG.toml` meant to be dropped in ahead of the mod, which is the proof
+/// that a partial file is read and filled in rather than rejected.
+///
+/// Those three lines and no more. An earlier version added `DLSSMode = 2` here
+/// on the reasoning that DLSS quality is worth choosing early, and that was
+/// wrong in a way worth remembering: the mod keeps DLSS quality at
+/// `[DLSS] DLSSMode`, so what this created was a stray top-level key that the
+/// mod never read and that sat in the file looking authoritative.
 ///
 /// An existing file is never touched — those are the player's choices.
 pub fn seed(game_dir: &Path) -> Result<bool> {
@@ -939,72 +1123,47 @@ pub fn seed(game_dir: &Path) -> Result<bool> {
     Ok(true)
 }
 
-/// Home to open it, a controller able to as well, and DLSS at quality.
-const SEED: &str = "OverlayToggleKey = \"Home\"\n\
-                    ImGuiUseGamepadNav = true\n\
-                    ImGuiUseGamepadToggle = true\n\
-                    DLSSMode = 2\n";
+/// Home to open it, and a controller able to as well.
+const SEED: &str = "OverlayToggleKey = \"Home\"
+                    ImGuiUseGamepadNav = true
+                    ImGuiUseGamepadToggle = true
+";
 
-/// `RemoveFramerateLimit` reads better as `Remove framerate limit`.
-fn spaced(key: &str) -> String {
-    let mut out = String::with_capacity(key.len() + 4);
-    for (index, ch) in key.char_indices() {
-        if index > 0 && ch.is_uppercase() {
-            out.push(' ');
-            out.extend(ch.to_lowercase());
-        } else {
-            out.push(ch);
-        }
-    }
-    out
-}
-
-/// Writes one setting back, leaving the rest of the file exactly as it was.
+/// Keys an earlier Roundtable wrote that the mod does not read.
 ///
-/// `toml_edit` rather than a parse-and-serialise round trip: the mod writes this
-/// file too, and handing it back reformatted with its comments stripped is how a
-/// launcher earns a bug report it did not cause.
-pub fn set_setting(game_dir: &Path, key: &str, value: &str) -> Result<String> {
+/// Left alone they are harmless and confusing: a top-level `DLSSMode` sits in
+/// the file next to the real `[DLSS] DLSSMode` and disagrees with it, and
+/// anybody reading the file to work out why a setting will not change finds two
+/// of it.
+const STRAY: &[&str] = &["DLSSMode"];
+
+/// Takes those back out. Returns what it removed.
+pub fn tidy(game_dir: &Path) -> Vec<String> {
     let path = config_path(game_dir);
-    let text = std::fs::read_to_string(&path)
-        .map_err(|_| Error::msg("the mod has not written its settings yet — run the game once".to_string()))?;
-
-    let mut doc = text
-        .parse::<toml_edit::DocumentMut>()
-        .map_err(|e| Error::msg(format!("its settings file will not parse: {e}")))?;
-
-    if !doc.as_table().contains_key(key) {
-        return Err(Error::msg(format!("{key} is not one of its settings")));
-    }
-
-    // Typed the way the existing value is typed, so a boolean does not become
-    // the string "true" and get ignored.
-    let existing = doc[key].as_value().cloned();
-    doc[key] = match existing {
-        Some(v) if v.is_bool() => toml_edit::value(matches!(
-            value.to_ascii_lowercase().as_str(),
-            "true" | "1" | "on" | "yes"
-        )),
-        Some(v) if v.is_integer() => toml_edit::value(
-            value
-                .parse::<i64>()
-                .map_err(|_| Error::msg(format!("{key} takes a whole number")))?,
-        ),
-        Some(v) if v.is_float() => toml_edit::value(
-            value
-                .parse::<f64>()
-                .map_err(|_| Error::msg(format!("{key} takes a number")))?,
-        ),
-        _ => toml_edit::value(value),
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return Vec::new();
+    };
+    let Ok(mut doc) = text.parse::<toml_edit::DocumentMut>() else {
+        return Vec::new();
     };
 
-    // The original once, so a bad guess is recoverable.
-    let backup = path.with_extension("toml.roundtable-bak");
-    if !backup.exists() {
-        let _ = std::fs::copy(&path, &backup);
+    let mut gone = Vec::new();
+    for key in STRAY {
+        // Only when the real one exists in its section, so this can never take
+        // away the only copy of a setting.
+        let real = doc
+            .iter()
+            .any(|(_, item)| item.as_table().is_some_and(|t| t.contains_key(key)));
+        if real && doc.as_table().contains_key(key) {
+            doc.as_table_mut().remove(key);
+            gone.push((*key).to_string());
+        }
     }
-    std::fs::write(&path, doc.to_string()).at(&path)?;
-    Ok(format!("{key} set to {value}"))
+
+    if !gone.is_empty() {
+        let _ = std::fs::write(&path, doc.to_string());
+    }
+    gone
 }
 
 // ---------------------------------------------------------------------------
@@ -1207,8 +1366,28 @@ fn unzip(archive: &Path, destination: &Path) -> Result<()> {
 mod tests {
     use super::*;
 
+    /// A scratch folder under `target`, not under the system temp.
+    ///
+    /// These tests write files called `D3D12.dll` and `nvngx_dlss.dll`, and a
+    /// file with one of those names appearing in the Windows temp folder is
+    /// precisely what a real-time scanner examines hardest. It holds the file
+    /// while it looks, the post-install read-back finds it absent, and the test
+    /// fails — not every run, which is worse than always.
+    ///
+    /// `target` is already excluded from scanning on any machine that builds
+    /// this often enough to notice, and it is the conventional place for build
+    /// scratch anyway.
+    ///
+    /// The name has to be unique per test. Two of these tests were passed
+    /// "stray" and ran in parallel, and since this wipes the folder before it
+    /// uses it, one deleted the other's files mid-run — which showed up as an
+    /// install failing on a file that had been there a moment earlier, about
+    /// one run in four.
     fn temp(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("roundtable-erss-test-{name}"));
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("test-scratch")
+            .join(format!("erss-{name}"));
         std::fs::remove_dir_all(&dir).ok();
         std::fs::create_dir_all(&dir).unwrap();
         dir
@@ -1523,34 +1702,103 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    #[test]
-    fn the_settings_it_writes_are_readable_before_the_game_has_run() {
-        // The mod generates its config on first load, which would leave this
-        // pane empty on a fresh install — and the one setting somebody wants
-        // beforehand is the key that opens it.
-        let dir = temp("seed");
+    /// The config as the mod actually writes it, trimmed to the parts that
+    /// matter. Taken from a real install after a real launch — the shape is the
+    /// whole point, so inventing one would test nothing.
+    const REAL: &str = r#"# Version: 4.14.1-0 (86498e0) Release
+
+OverlayToggleKey = "Delete"
+DateFirstLaunch = 2026-08-07T16:08:06.000000Z
+DatePopup = 1970-01-01T00:00:00.000000Z
+ImGuiUseGamepadNav = true
+ImGuiUseGamepadToggle = true
+DLSSMode = 2
+
+[Renderer]
+ScalingMode = "None"
+IsHDR = false
+LatencyReductionMode = 0
+RemoveFPSLimit = true
+MaxFPS = 0.0
+
+[DLSS]
+DLSSPreset = 0
+DLSSMode = 5
+Sharpness = 0.5
+
+[FrameGeneration]
+FrameGenMode = 0
+GIGlitchMitigation = 1
+EnableFrameGen = true
+
+[DLSS-G]
+LimitFrameRate = true
+NumGenFrames = 1
+"#;
+
+    fn with_config(name: &str) -> PathBuf {
+        let dir = temp(name);
         let game = dir.join("Game");
-        std::fs::create_dir_all(&game).unwrap();
+        std::fs::create_dir_all(game.join("ERSS2")).unwrap();
+        std::fs::write(game.join("ERSS2").join("ERSS-FG.toml"), REAL).unwrap();
+        game
+    }
 
-        assert!(settings(&game).is_empty(), "nothing there yet");
-        assert!(seed(&game).unwrap(), "seeded");
-        assert!(!seed(&game).unwrap(), "and never a second time");
-
+    #[test]
+    fn the_settings_the_player_wants_are_the_ones_in_sections() {
+        // Live, this pane showed four top-level settings nobody cares about and
+        // none of the ones that do anything, because it never looked inside a
+        // section. The player changed things and nothing happened.
+        let game = with_config("sections");
         let found = settings(&game);
-        let key = found.iter().find(|s| s.key == "OverlayToggleKey").unwrap();
-        assert_eq!(key.value, "Home");
-        assert_eq!(key.kind, "text");
 
-        let dlss = found.iter().find(|s| s.key == "DLSSMode").unwrap();
-        assert_eq!(dlss.kind, "number", "the mod stores it as the raw NGX value");
-        assert_eq!(dlss.value, "2");
+        let by = |key: &str| found.iter().find(|s| s.key == key);
+        assert!(by("Renderer.ScalingMode").is_some(), "the upscaler: {found:#?}");
+        assert!(by("FrameGeneration.FrameGenMode").is_some(), "frame generation");
+        assert!(by("DLSS-G.NumGenFrames").is_some(), "a section name with a dash in it");
+
+        // DLSS quality is the one in the section, not the stray at the top.
+        let dlss = by("DLSS.DLSSMode").expect("DLSS quality");
+        assert_eq!(dlss.value, "5");
+        assert_eq!(dlss.title, "DLSS quality");
         assert_eq!(
-            dlss.choices.iter().find(|c| c.value == "2").map(|c| c.label.as_str()),
-            Some("Quality"),
-            "2 is Quality, which reads backwards without a label"
+            dlss.choices.iter().find(|c| c.value == "5").map(|c| c.label.as_str()),
+            Some("DLAA")
         );
 
-        std::fs::remove_dir_all(&dir).ok();
+        // A timestamp the mod keeps for itself is not a setting.
+        assert!(by("DateFirstLaunch").is_none(), "no datetimes in the pane");
+
+        // The ones that matter lead.
+        assert_eq!(found[0].key, "Renderer.ScalingMode");
+
+        std::fs::remove_dir_all(game.parent().unwrap()).ok();
+    }
+
+    #[test]
+    fn the_upscaler_and_the_generator_move_separately() {
+        // "if I want DLSS but no frame generation, I am stuck" — they are two
+        // settings in two sections and always were; the pane could not reach
+        // either of them.
+        let game = with_config("independent");
+
+        set_setting(&game, "Renderer.ScalingMode", "DLSS").unwrap();
+        set_setting(&game, "FrameGeneration.FrameGenMode", "0").unwrap();
+
+        let found = settings(&game);
+        let value = |key: &str| found.iter().find(|s| s.key == key).map(|s| s.value.clone());
+        assert_eq!(value("Renderer.ScalingMode").as_deref(), Some("DLSS"));
+        assert_eq!(value("FrameGeneration.FrameGenMode").as_deref(), Some("0"));
+
+        // And the other way round.
+        set_setting(&game, "Renderer.ScalingMode", "None").unwrap();
+        set_setting(&game, "FrameGeneration.FrameGenMode", "1").unwrap();
+        let found = settings(&game);
+        let value = |key: &str| found.iter().find(|s| s.key == key).map(|s| s.value.clone());
+        assert_eq!(value("Renderer.ScalingMode").as_deref(), Some("None"));
+        assert_eq!(value("FrameGeneration.FrameGenMode").as_deref(), Some("1"));
+
+        std::fs::remove_dir_all(game.parent().unwrap()).ok();
     }
 
     #[test]
@@ -1571,48 +1819,112 @@ mod tests {
     }
 
     #[test]
-    fn an_enum_stays_a_number_when_it_is_written_back() {
-        // Quoting it would make the mod ignore the value and fall back.
-        let dir = temp("write-enum");
-        let game = dir.join("Game");
-        std::fs::create_dir_all(&game).unwrap();
-        seed(&game).unwrap();
+    fn the_mod_can_be_made_to_stop_announcing_itself() {
+        // The player hands this to friends and does not want them to know there
+        // is a mod, let alone see "press Home to close" over the game. Nothing
+        // is lost by shutting it: every setting the overlay offers is in the
+        // launcher.
+        let game = with_config("quiet");
+        let done = quieten(&game);
 
-        set_setting(&game, "DLSSMode", "5").unwrap();
+        assert!(done.contains(&"OverlayToggleKey".to_string()), "the key: {done:?}");
+        assert!(done.contains(&"DatePopup".to_string()), "the notice: {done:?}");
+
         let text = std::fs::read_to_string(config_path(&game)).unwrap();
-        assert!(text.contains("DLSSMode = 5"), "got {text}");
-        assert!(!text.contains("\"5\""));
+        assert!(text.contains("OverlayToggleKey = \"None\""));
+        // The date has to stay a date, or the mod cannot read it and shows the
+        // notice again.
+        assert!(
+            !text.contains("DatePopup = \""),
+            "a quoted date is not a date: {text}"
+        );
+        assert!(
+            text.contains("DatePopup = 20"),
+            "and it has to actually be this century: {text}"
+        );
 
-        set_setting(&game, "ImGuiUseGamepadNav", "false").unwrap();
-        assert!(std::fs::read_to_string(config_path(&game))
-            .unwrap()
-            .contains("ImGuiUseGamepadNav = false"));
+        // Settings this build of the mod does not have are skipped, never
+        // invented.
+        assert!(!done.contains(&"ShowMetricsWindow".to_string()));
 
-        // A key the mod does not have is refused rather than invented.
-        assert!(set_setting(&game, "MadeUpSetting", "1").is_err());
-
-        std::fs::remove_dir_all(&dir).ok();
+        std::fs::remove_dir_all(game.parent().unwrap()).ok();
     }
 
     #[test]
-    fn a_setting_is_described_by_what_it_does_and_not_only_by_its_name() {
-        // The mod's DLL is packed, so the spelling of most of its keys is not
-        // knowable from outside. Matching the shape of the name is what keeps
-        // this right when a release renames one or adds another.
-        assert_eq!(describe("DLSSMode").unwrap().title, "DLSS quality");
-        for spelling in ["FrameGeneration", "frame_generation", "EnableFrameGen"] {
-            assert_eq!(
-                describe(spelling).map(|k| k.title),
-                Some("Frame generation"),
-                "{spelling}"
-            );
+    fn a_value_keeps_the_type_the_mod_gave_it() {
+        // A float written as an integer, or a boolean written as the string
+        // "true", is a value the mod reads and discards.
+        let game = with_config("types");
+
+        set_setting(&game, "Renderer.MaxFPS", "144").unwrap();
+        set_setting(&game, "Renderer.IsHDR", "true").unwrap();
+        set_setting(&game, "DLSS.Sharpness", "0.2").unwrap();
+        set_setting(&game, "OverlayToggleKey", "Home").unwrap();
+
+        let text = std::fs::read_to_string(config_path(&game)).unwrap();
+        assert!(text.contains("MaxFPS = 144.0"), "a float stays a float: {text}");
+        assert!(text.contains("IsHDR = true"), "not the string: {text}");
+        assert!(text.contains("Sharpness = 0.2"));
+        assert!(text.contains("OverlayToggleKey = \"Home\""), "a string stays quoted");
+
+        // The comment the mod wrote at the top survives a round trip.
+        assert!(text.starts_with("# Version: 4.14.1-0"));
+
+        // A key the mod does not have is refused rather than invented — this is
+        // how the stray top-level DLSSMode got there in the first place.
+        assert!(set_setting(&game, "Renderer.MadeUp", "1").is_err());
+        assert!(set_setting(&game, "NoSuchSection.Thing", "1").is_err());
+        assert!(set_setting(&game, "AlsoMadeUp", "1").is_err());
+
+        std::fs::remove_dir_all(game.parent().unwrap()).ok();
+    }
+
+    #[test]
+    fn a_stray_key_an_earlier_version_wrote_is_taken_back_out() {
+        // Roundtable itself put `DLSSMode` at the top of the file, where the mod
+        // never reads it, next to the real `[DLSS] DLSSMode` that disagrees.
+        let game = with_config("stray-key");
+        assert!(settings(&game).iter().any(|s| s.key == "DLSSMode"));
+
+        assert_eq!(tidy(&game), vec!["DLSSMode".to_string()]);
+
+        let found = settings(&game);
+        assert!(!found.iter().any(|s| s.key == "DLSSMode"), "the stray is gone");
+        assert_eq!(
+            found.iter().find(|s| s.key == "DLSS.DLSSMode").map(|s| s.value.as_str()),
+            Some("5"),
+            "and the real one is untouched"
+        );
+
+        // Nothing left to do the second time, and never the only copy.
+        assert!(tidy(&game).is_empty());
+
+        std::fs::remove_dir_all(game.parent().unwrap()).ok();
+    }
+
+    #[test]
+    fn the_settings_that_matter_live_in_sections_and_are_reached_there() {
+        // The bug this exists to stop coming back. The mod keeps almost
+        // everything in `[Renderer]`, `[DLSS]`, `[FrameGeneration]`; the first
+        // version of this pane read and wrote only the top of the file, so it
+        // showed four settings nobody cares about and every change the player
+        // made landed on a key the mod does not read.
+        let sectioned = KNOWN.iter().filter(|k| k.path.contains('.')).count();
+        assert!(sectioned >= 10, "only {sectioned} of the known settings are in sections");
+
+        for known in KNOWN {
+            assert!(!known.title.is_empty());
+            assert!(known.detail.len() > 30, "{} needs a reason", known.path);
         }
-        assert_eq!(describe("SuperResolution").map(|k| k.title), Some("Upscaler"));
-        assert_eq!(describe("UpscalerType").map(|k| k.title), Some("Upscaler"));
-        assert_eq!(describe("SharpnessAmount").map(|k| k.title), Some("Sharpening"));
-        assert_eq!(describe("FpsLimit").map(|k| k.title), Some("Frame limit"));
-        assert!(describe("GIGlitchMitigation").is_some());
-        assert!(describe("SomethingNobodyHasSeen").is_none());
+
+        // The two the player specifically could not separate.
+        assert!(described("Renderer.ScalingMode").is_some(), "the upscaler");
+        assert!(described("FrameGeneration.FrameGenMode").is_some(), "frame generation");
+        assert_ne!(
+            described("Renderer.ScalingMode"),
+            described("FrameGeneration.FrameGenMode"),
+            "one without the other has to be possible"
+        );
     }
 
     #[test]
@@ -1676,6 +1988,7 @@ mod tests {
             kind: "text".into(),
             choices: Vec::new(),
             described: false,
+            restart: false,
         };
         for off in ["false", "0", "Off", "None", "Disabled", ""] {
             assert!(!switched_on(&of(off)), "{off}");

@@ -432,6 +432,8 @@ export interface ErssSetting {
   value: string;
   kind: "bool" | "number" | "text";
   choices: ErssChoice[];
+  /** True when the game has to be restarted for it to take effect. */
+  restart: boolean;
   /** False when Roundtable knows nothing about this key beyond its name. */
   described: boolean;
 }
