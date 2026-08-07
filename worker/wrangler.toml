@@ -1,0 +1,22 @@
+# The answering service behind the in-game overlay.
+#
+# Keys are never in this file. They are set with `wrangler secret put`, which
+# stores them on Cloudflare and keeps them out of a repository that is public.
+#
+#   wrangler secret put GROQ_KEY
+#   wrangler secret put GEMINI_KEY
+#   wrangler secret put MISTRAL_KEY
+#   wrangler secret put OPENROUTER_KEY
+#   wrangler secret put NVIDIA_KEY
+
+name = "roundtable-ask"
+main = "src/index.js"
+compatibility_date = "2026-08-01"
+
+# Cloudflare's own models, as the last line of defence when every hosted
+# provider is rate-limited. No key: the binding is the credential.
+[ai]
+binding = "AI"
+
+[observability]
+enabled = true
