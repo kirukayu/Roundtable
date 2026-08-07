@@ -1,0 +1,379 @@
+0a000000	Stormveil Castle
+0a010000	Chapel of Anticipation
+0b000000	Leyndell, Royal Capital
+0b050000	Leyndell, Ashen Capital
+0b0a0000	Roundtable Hold
+0b470000	Ending Cutscenes
+0c010000	Ainsel River
+0c020000	Siofra River
+0c030000	Deeproot Depths
+0c040000	Ainsel River - Boss
+0c050000	Mohgwyn Palace
+0c070000	Siofra River Bank
+0c080000	Siofra River - Boss
+0c090000	Nokron, Eternal City - Boss
+0d000000	Crumbling Farum Azula
+0e000000	Academy of Raya Lucaria
+0f000000	Miquella's Haligtree
+10000000	Volcano Manor
+12000000	Stranded Graveyard
+13000000	Stone Platform
+1e000000	Tombsward Catacombs
+1e010000	Impaler's Catacombs
+1e020000	Stormfoot Catacombs
+1e030000	Road's End Catacombs
+1e040000	Murkwater Catacombs
+1e050000	Black Knife Catacombs
+1e060000	Cliffbottom Catacombs
+1e070000	Wyndham Catacombs
+1e080000	Sainted Hero's Grave
+1e090000	Gelmir Hero's Grave
+1e0a0000	Auriza Hero's Grave
+1e0b0000	Deathtouched Catacombs
+1e0c0000	Unsightly Catacombs
+1e0d0000	Auriza Side Tomb
+1e0e0000	Minor Erdtree Catacombs
+1e0f0000	Caelid Catacombs
+1e100000	War-Dead Catacombs
+1e110000	Giant-Conquering Hero's Grave
+1e120000	Giants' Mountaintop Catacombs
+1e130000	Consecrated Snowfield Catacombs
+1e140000	Hidden Path to the Haligtree
+1f000000	Murkwater Cave
+1f010000	Earthbore Cave
+1f020000	Tombsward Cave
+1f030000	Groveside Cave
+1f040000	Stillwater Cave
+1f050000	Lakeside Crystal Cave
+1f060000	Academy Crystal Cave
+1f070000	Seethewater Cave
+1f090000	Volcano Cave
+1f0a0000	Dragonbarrow Cave
+1f0b0000	Sellia Hideaway
+1f0c0000	Cave of the Forlorn
+1f0f0000	Coastal Cave
+1f110000	Highroad Cave
+1f120000	Perfumer's Grotto
+1f130000	Sage's Cave
+1f140000	Abandoned Cave
+1f150000	Gaol Cave
+1f160000	Spiritcaller Cave
+20000000	Morne Tunnel
+20010000	Limgrave Tunnels
+20020000	Raya Lucaria Crystal Tunnel
+20040000	Old Altus Tunnel
+20050000	Altus Tunnel
+20070000	Gael Tunnel
+20080000	Sellia Crystal Tunnel
+200b0000	Yelough Anix Tunnel
+220a0000	Divine Tower of Limgrave
+220b0000	Divine Tower of Liurnia
+220c0000	Divine Tower of West Altus
+220d0000	Divine Tower of Caelid
+220e0000	Divine Tower of East Altus
+220f0000	Isolated Divine Tower
+23000000	Subterranean Shunning-Grounds
+27140000	Ruin-Strewn Precipice
+3c080a02	Southwest Liurnia
+3c080b02	West Liurnia
+3c080c02	Northwest Liurnia
+3c080d02	Far West Altus Plateau
+3c090902	Far West Limgrave
+3c090a02	Southeast Liurnia
+3c090b02	East Liurnia
+3c090c02	Liurnia to Atlus Plateau
+3c090d02	West Atlus Plateau
+3c0a0702	South Weeping Peninsula
+3c0a0802	West Weeping Peninsula
+3c0a0902	West Limgrave
+3c0a0a02	Northwest Limgrave Coast
+3c0a0c02	South Atlus Plateau
+3c0a0d02	North Atlus Plateau
+3c0b0702	Southeast Weeping Peninsula Coast
+3c0b0802	East Weeping Peninsula
+3c0b0902	East Limgrave
+3c0b090c	East Limgrave (Meteored)
+3c0b0a02	Northwest Caelid
+3c0b0c02	Southeast Atlus Plateau
+3c0b0d02	Northeast Atlus Plateau
+3c0b0d0c	Northeast Atlus Plateau (Ashen)
+3c0b0e02	West Consecrated Snowfield
+3c0c0802	Far South Caelid
+3c0c0902	South Caelid
+3c0c0a02	North Caelid
+3c0c0c02	Forbidden Lands
+3c0c0d02	Southwest Mountaintops
+3c0c0e02	Northwest Mountaintops
+3c0d0902	Southeast Caelid
+3c0d0a02	Northeast Caelid
+3c0d0d02	Southeast Mountaintops
+3c0d0e02	Northeast Mountaintops
+3c212800	Moonlight Altar - Altar South, Chelona's Rise
+3c212900	Moonlight Altar - West of Deep Ainsel Well
+3c212a00	Moonlight Altar - Ringleader's Evergaol
+3c212b00	Liurnia of the Lakes - Minor Erdtree, Road's End Catacombs Entrance
+3c212c00	Liurnia of the Lakes - Revenger's Shack
+3c212d00	Liurnia of the Lakes - Cuckoo's Evergaol, West of Meeting Place
+3c212e00	Liurnia of the Lakes - Foot of the Four Belfries
+3c212f00	Liurnia of the Lakes - The Four Belfries, Giant's Caravan Below
+3c222900	Moonlight Altar - Deep Ainsel Well
+3c222a00	Liurnia of the Lakes - Village of the Albinaurics; Moonlight Altar - Moonfolk Ruins
+3c222b00	Liurnia of the Lakes - Converted Tower
+3c222c00	Liurnia of the Lakes - Temple Quarter
+3c222d00	Liurnia of the Lakes - Meeting Place, Academy Crystal Cave Entrance
+3c222e00	Liurnia of the Lakes - Crystalline Woods, Path to the Four Belfries
+3c222f00	Liurnia of the Lakes - Sorcerer's Isle West, East Belfry
+3c223000	Liurnia of the Lakes - Northern Liurnia Lake Shore, Kingsrealm Ruins
+3c223100	Liurnia of the Lakes - Road to the Manor
+3c223200	Liurnia of the Lakes - Ranni's Rise, Seluvis's Rise
+3c223300	Liurnia of the Lakes - Renna's Rise
+3c232900	Moonlight Altar - Lunar Estate Ruins
+3c232a00	Moonlight Altar - Cathedral of Manus Celes
+3c232b00	Liurnia of the Lakes - Folly on the Lake, South Rose Church
+3c232c00	Liurnia of the Lakes - Far West Gate Town, North Rose Church
+3c232d00	Liurnia of the Lakes - South Raya Lucaria Gate
+3c232e00	Liurnia of the Lakes - Main Academy Gate, Academy of Raya Lucaria Entrance
+3c232f00	Liurnia of the Lakes - Testu's Rise, East Gate Bridge Trestle
+3c233000	Liurnia of the Lakes - North of Sorcerer's Isle
+3c233100	Liurnia of the Lakes - South of Caria Manor, West of Ravine Entrance
+3c233200	Liurnia of the Lakes - Caria Manor
+3c233300	Liurnia of the Lakes - North of Caria Manor
+3c233400	Mt. Gelmir - Before Hermit Shack
+3c233500	Mt. Gelmir - Seethewater Terminus
+3c233600	Mt. Gelmir - Fort Laiedd
+3c242900	Liurnia of the Lakes - Slumbering Wolf's Shack, Lakeside Crystal Cave Entrance
+3c242a00	Liurnia of the Lakes - West of Scenic Isle
+3c242b00	Liurnia of the Lakes - Boilprawn Shack, Fallen Ruins of the Lake
+3c242c00	Liurnia of the Lakes - Gate Town Southwest
+3c242d00	Liurnia of the Lakes - Gate Town Northwest
+3c242e00	Liurnia of the Lakes - West of Church of Vows
+3c242f00	Liurnia of the Lakes - West of Raya Lucaria Crystal Tunnel; Bellum Highway - South of East Raya Lucaria Gate
+3c243000	Bellum Highway - East Raya Lucaria Gate
+3c243100	Liurnia of the Lakes - Southeast Ravine, Lake at Caria Manor Entrance; Bellum Highway - Bellum Church
+3c243200	Liurnia of the Lakes - Behind Caria Manor, Royal Grave Evergaol, Part of Ravine
+3c243300	Altus Plateau - Perfumer's Ruins, Unsightly Catacombs Entrance
+3c243400	Mt. Gelmir - Craftsman's Shack, Hermit's Shack
+3c243500	Mt. Gelmir - Outside Volcano Manor
+3c243600	Mt. Gelmir - Ninth Mt. Gelmir Campsite, Road of Iniquity, Volcano Manor Entrance
+3c252900	Liurnia of the Lakes - South of Scenic Isle, East of Slumbering Wolf's Shack
+3c252a00	Liurnia of the Lakes - Scenic Isle, Laskyar Ruins
+3c252b00	Liurnia of the Lakes - North of Scenic Isle
+3c252c00	Liurnia of the Lakes - Gate Town Southeast
+3c252d00	Liurnia of the Lakes - Gate Town Northeast
+3c252e00	Liurnia of the Lakes - Church of Vows
+3c252f00	Liurnia of the Lakes - South of Mausoleum Compound, Raya Lucaria Crystal Tunnel Entrance
+3c253000	Liurnia of the Lakes - Mausoleum Compound
+3c253100	Bellum Highway - Church of Inhibition, Southwest of Grand Lift of Dectus
+3c253200	Liurnia of the Lake - Northeast Ravine; Bellum Highway - West of Grand Lift of Dectus
+3c253300	Altus Plateau - Abandoned Coffin, Ruin-Strewn Precipice Exit
+3c253400	Mt. Gelmir - Seethewater River, Hermit Village, Wyndham Catacombs Entrance, Sage's Cave Entrance, Abductor Virgins Exit
+3c253500	Mt. Gelmir - Primeval Sorcerer Azur, Gelmir Hero's Grave Entrance
+3c253600	Mt. Gelmir - Minor Erdtree, Seethewater Cave Entrance
+3c253700	Mt. Gelmir - Volcano Cave Entrance
+3c262700	Liurnia of the Lakes - West of Church of Irith
+3c262800	Liurnia of the Lakes - Liurnia Lake Shore
+3c262900	Liurnia of the Lakes - Laskyar Ruins, Malefactor's Evergaol
+3c262a00	Liurnia of the Lakes - Highway Lookout Tower
+3c262b00	Liurnia of the Lakes - Gate Town Bridge
+3c262c00	Liurnia of the Lakes - North of Gate Town Bridge
+3c262d00	Liurnia of the Lakes - Artist's Shack, Eastern Liurnia Lake Shore
+3c262e00	Liurnia of the Lakes - Eastern Tableland, Ainsel River Well
+3c262f00	Liurnia of the Lakes - Ruined Labyrinth, Uld Palace Ruins
+3c263000	Bellum Highway - Frenzied Flame Village, Minor Erdtree
+3c263100	Bellum Highway - Frenzy-Flaming Tower
+3c263200	Liurnia of the Lakes - Ravine-Veiled Village; Bellum Highway - Grand Lift of Dectus; Altus Plateau - Altus Plateau; Ruin-Strewn Precipice Entrance
+3c263300	Altus Plateau - Erdtree-Gazing Hill, Lux Ruins
+3c263400	Altus Plateau - Wyndham Ruins, Wyndham Catacombs Entrance
+3c263500	Altus Plateau - Old Altus Tunnel Entrance
+3c263600	Mt. Gelmir - First Mt. Gelmir Campsite, Corpse-Stench Shack; Altus Plateau - West of Shaded Castle
+3c272700	Liurnia of the Lakes - Church of Irith
+3c272800	Liurnia of the Lakes - Lake-Facing Cliffs, Stormveil Castle Exit, Stillwater Cave Entrance
+3c272900	Liurnia of the Lakes - Liurnia Highway South, Purified Ruins, Cliffbottom Catacombs Entrance
+3c272a00	Liurnia of the Lakes - Liurnia Highway North
+3c272b00	Liurnia of the Lakes - Liurnia Highway Far North
+3c272c00	Liurnia of the Lakes - Jarburg, Divine Tower of Liurnia Entrance
+3c272d00	Liurnia of the Lakes - Eastern Tableland Southeast Cliffside
+3c272e00	Liurnia of the Lakes - Eastern Tableland Northeast Cliffside
+3c273000	Bellum Highway - Converted Fringe Tower; Liurnia of the Lakes - Black Knife Catacombs Entrance
+3c273100	Bellum Highway - Converted Fringe Tower North Cliffside
+3c273200	Altus Plateau - Golden Lineage Evergaol
+3c273300	Altus Plateau - Altus Highway Junction
+3c273400	Altus Plateau - Second Church of Marika
+3c273500	Altus Plateau - Mirage Rise; Mt. Gelmir - Bridge of Iniquity
+3c273600	Altus Plateau - Shaded Castle
+3c282100	Weeping Peninsula - Far West Shore
+3c282600	Stormhill - Forested West Cliffside
+3c282700	Stormhill - Path to Liurnia
+3c282800	Liurnia - Liurnia Highway South Endpoint, Path to Stormhill
+3c283200	Altus Plateau - Southwest of Tree Sentinel Duo
+3c283300	Altus Plateau - West of Tree Sentinel Duo, Stormcaller Church
+3c283400	Altus Plateau - Forest-Spanning Greatbridge, St. Trina's Hideaway, Sainted Hero's Grave Entrance
+3c283500	Altus Plateau - Bower of Bounty, Writheblood Ruins
+3c283600	Altus Plateau - Road of Iniquity Side Path
+3c283700	Altus Plateau - West Windmill Pasture
+3c292000	Weeping Peninsula - Isolated Merchant's Shack
+3c292100	Weeping Peninsula - Fourth Church of Marika, Witchbane Ruins
+3c292200	Weeping Peninsula - North of Fourth Church of Marika
+3c292300	Limgrave - Church of Dragon Communion, Coastal Cave Exit
+3c292400	Limgrave - Coastal Cave Entrance
+3c292500	Limgrave - Stormfoot Catacombs Entrance
+3c292600	Stormhill - Stormhill Shack, Stormveil Castle Entrance
+3c292700	Stormhill - North of Stormhill Shack
+3c293200	Altus Plateau - South of Tree Sentinel Duo
+3c293300	Altus Plateau - Tree Sentinel Duo, Perfumer's Grotto Entrance
+3c293400	Altus Plateau - Rampartside Path, Altus Tunnel Entrance
+3c293500	Altus Plateau - Woodfolk Ruins, Minor Erdtree
+3c293600	Altus Plateau - West Windmill Village
+3c293700	Altus Plateau - Village Windmill Pasture, East Windmill Pasture
+3c2a2000	Weeping Peninsula - Tower of Return
+3c2a2100	Weeping Peninsula - Tombsward; Weeping Evergaol; Tombsward Cave Entrance
+3c2a2200	Weeping Peninsula - Tombsward Ruins
+3c2a2300	Limgrave - South of Stranded Graveyard Exit
+3c2a2400	Limgrave - Church of Elleh, Stranded Graveyard Exit
+3c2a2500	Limgrave - Gatefront, Stormhill Evergaol, Groveside Cave Entrance, Limgrave Tunnels Entrance
+3c2a2600	Stormhill - Warmaster's Shack, Stormgate
+3c2a2700	Stormhill - North of Warmaster's Shack
+3c2a2800	Stormhill - Northwest Cliffside
+3c2a3200	Capital Outskirts - South of Outer Wall Phantom Tree
+3c2a3300	Capital Outskirts - Outer Wall Phantom Tree
+3c2a3400	Capital Outskirts - Southwest Outer Wall Battleground
+3c2a3500	Capital Outskirts - Northwest Outer Wall Battleground
+3c2a3600	Altus Plateau - East Windmill Village, Highway Lookout Tower
+3c2a3700	Altus Plateau - Windmill Heights
+3c2b1e00	Weeping Peninsula - Morne Moangrave
+3c2b1f00	Weeping Peninsula - Castle Morne
+3c2b2000	Weeping Peninsula - Castle Morne Approach Northwest Cliffside
+3c2b2100	Weeping Peninsula - Minor Erdtree, Tombsward Catacombs Entrance, Morne Tunnel Entrance
+3c2b2200	Weeping Peninsula - Church of Pilgrimage, Demi-Human Forest Ruins
+3c2b2300	Limgrave - Seaside Ruins
+3c2b2400	Limgrave - Dragon-Burnt Ruins
+3c2b2500	Limgrave - Agheel Lake North, Murkwater Cave Entrance
+3c2b2600	Limgrave - Murkwater Coast, Murkwater Catacombs Entrance
+3c2b2700	Stormhill - Saintsbridge, Deathtouched Catacombs Entrance, Highroad Cave Entrance
+3c2b2800	Stormhill - Northeast Cliffside
+3c2b3200	Capital Outskirts - Minor Erdtree Church, Sealed Tunnel Entrance
+3c2b3300	Capital Outskirts - East of Outer Wall Phantom Tree
+3c2b3400	Capital Outskirts - Southeast Outer Wall Battleground
+3c2b3500	Capital Outskirts - Northeast Outer Wall Battleground, Hermit Merchant's Shack
+3c2b3600	Altus Plateau - Cliffside Northeast of Outer Wall Battlefield
+3c2c1f00	Weeping Peninsula - Castle Morne Approach South
+3c2c2000	Weeping Peninsula - Castle Morne Approach North
+3c2c2100	Weeping Peninsula - Castle Morne Rampart, Ailing Village Outskirts
+3c2c2200	Weeping Peninsula - Bridge of Sacrifice, Forest Lookout Tower, Earthbore Cave Entrance
+3c2c2300	Limgrave - Agheel Lake South, Forlorn Hound Evergaol
+3c2c2400	Limgrave - Waypoint Ruins
+3c2c2500	Limgrave - Mistwood Outskirts
+3c2c2600	Limgrave - Artist's Shack
+3c2c2700	Limgrave - Summonwater Village Outskirts
+3c2c3400	Capital Outskirts - South of Minor Erdtree
+3c2c3500	Capital Outskirts - Minor Erdtree
+3c2d2000	Weeping Peninsula - Castle Morne Approach Northeast Cliffside
+3c2d2100	Weeping Peninsula - Beside the Crater-Pocked Glade, Oridys's Rise
+3c2d2200	Weeping Peninsula - Impaler's Catacombs Entrance
+3c2d2300	Limgrave - Southwest of Fort Haight
+3c2d2400	Limgrave - Fort Haight West
+3c2d240a	Limgrave - Fort Haight West (Meteored)
+3c2d2500	Limgrave - Siofra River Well, Mistwood Ruins, Minor Erdtree, Nokron Entrance
+3c2d2600	Limgrave - South of Summonwater Village
+3c2d2700	Limgrave - Summonwater Village
+3c2d2800	Limgrave - North of Summonwater Village
+3c2d3300	Capital Outskirts - Auriza Hero's Grave Entrance
+3c2d3400	Capital Outskirts - Capital Rampart, Auriza Side Tomb Entrance
+3c2d340a	Capital Outskirts - Capital Rampart, Auriza Side Tomb Entrance (Ashen)
+3c2d3500	Capital Outskirts - Capital Rampart North Cliffside
+3c2e2400	Limgrave - Fort Haight
+3c2e2500	Limgrave - East of Siofra River Well
+3c2e2600	Limgrave - Third Church of Marika, Gaol Cave Exit
+3c2e2700	Limgrave - Rear Gael Tunnel Entrance; Caelid - Gael Tunnel Entrance
+3c2e2800	Caelid - Smoldering Church, Rotview Balcony
+3c2e3700	Consecrated Snowfield - Yelough Anix Ruins West Cliffside
+3c2e3900	Consecrated Snowfield - Far West Cliffside
+3c2f2500	Caelid - West of Caelid Highway South
+3c2f2600	Caelid - Fort Gael, Caelid Waypoint Ruins, Gaol Cave Entrance
+3c2f2700	Caelid - Fort Gael North
+3c2f2800	Caelid - Caelem Ruins, Forsaken Ruins, Minor Erdtree, Minor Erdtree Catacombs Entrance
+3c2f2900	Caelid - South Great-Jar Area
+3c2f2a00	Caelid - North Great-Jar Area
+3c2f3300	Leyndell - Divine Tower of East Altus Entrance; Mountaintops of the Giants - Forbidden Lands Start
+3c2f3700	Consecrated Snowfield - Yelough Anix Ruins, Yelough Anix Tunnel Entrance
+3c2f3800	Consecrated Snowfield - North of Yelough Anix Ruins
+3c2f3900	Consecrated Snowfield - West of Ordina
+3c2f3a00	Consecrated Snowfield - Apostate Derelict
+3c302400	Caelid - Cathedral of Dragon Communion, Caelid Catacombs Entrance
+3c302500	Caelid - Caelid Highway South
+3c302600	Caelid - West Aeonia Swamp
+3c302700	Caelid - Smoldering Wall, Abandoned Cave Entrance
+3c302800	Caelid - Deep Siofra Well; Greyoll's Dragonbarrow - Dragonbarrow West
+3c302900	Greyoll's Dragonbarrow - Isolated Merchant's Shack
+3c303300	Mountaintops of the Giants - Forbidden Lands Midway
+3c303600	Consecrated Snowfield - Southwest Foggy Area
+3c303700	Consecrated Snowfield - Northwest Foggy Area, East of Yelough Anix Ruins
+3c303800	Consecrated Snowfield - South of Ordina
+3c303900	Consecrated Snowfield - Ordina, Liturgical Town
+3c303a00	Consecrated Snowfield - East of Apostate Derelict
+3c312400	Caelid - Southwest of Caelid Highway South
+3c312500	Caelid - Southern Aeonia Swamp Bank
+3c312600	Caelid - East Aeonia Swamp
+3c312700	Caelid - West Sellia, Sellia Crystal Tunnel Entrance
+3c312800	Greyoll's Dragonbarrow - South of Divine Tower of Caelid, Deep Siofra Well
+3c312900	Greyoll's Dragonbarrow - Divine Tower of Caelid Entrance
+3c313400	Mountaintops of the Giants - Before Grand Lift of Rold
+3c313500	Mountaintops of the Giants - West Zamor Ruins, Grand Lift of Rold
+3c313600	Consecrated Snowfield - Hidden Path to the Haligtree, Southeast Foggy Area
+3c313700	Consecrated Snowfield - Northeast Foggy Area, Inner Consecrated Snowfield
+3c313800	Consecrated Snowfield - Southeast of Ordina
+3c313900	Consecrated Snowfield - East of Ordina
+3c322400	Caelid - Impassable Greatbridge
+3c322500	Caelid - Far Southwest Radahn Arena, Aeonia Swamp Bank Southeast Cliffside
+3c322600	Caelid - Gowry's Shack
+3c322700	Caelid - East Sellia, Church of the Plague
+3c322800	Greyoll's Dragonbarrow - Dragonbarrow Fork
+3c322900	Greyoll's Dragonbarrow - North of Dragonbarrow Fork
+3c323500	Mountaintops of the Giants - East Zamor Ruins
+3c323600	Mountaintops of the Giants - North of Zamor Ruins
+3c323700	Consecrated Snowfield - Consecrated Snowfield Catacombs Entrance
+3c323800	Mountaintops of the Giants - Shack of the Lofty; Consecrated Snowfield - Minor Erdtree, Albinauric Rise, Cave of the Forlorn Entrance
+3c323900	Mountaintops of the Giants - West of Castle Sol; Consecrated Snowfield - North of Minor Erdtree
+3c332300	Caelid - Redmane Castle South Cliffside
+3c332400	Caelid - Redmane Castle
+3c332500	Caelid - Southwest Radahn Arena
+3c332600	Caelid - West Radahn Arena
+3c332700	Greyoll's Dragonbarrow - Fort Faroth
+3c332800	Greyoll's Dragonbarrow - Minor Erdtree, Dragonbarrow Cave Entrance
+3c332900	Greyoll's Dragonbarrow - Southwest Farum Greatbridge
+3c332a00	Greyoll's Dragonbarrow - Northwest Farum Greatbridge
+3c332b00	Greyoll's Dragonbarrow - Bestial Sanctum
+3c333400	Mountaintops of the Giants - Giants' Gravepost South Cliffside
+3c333500	Mountaintops of the Giants - Southwest Giants' Gravepost
+3c333600	Mountaintops of the Giants - Northwest Giants' Gravepost
+3c333700	Mountaintops of the Giants - Before Ancient Snow Valley Ruins
+3c333800	Mountaintops of the Giants - Ancient Snow Valley Ruins, Stargazers' Ruins
+3c333900	Mountaintops of the Giants - South Castle Sol, Snow Valley Ruins Overlook
+3c333a00	Mountaintops of the Giants - North Castle Sol
+3c342500	Caelid - South Radahn Arena
+3c342600	Caelid - Central Radahn Arena
+3c342700	Caelid - North Radahn Arena
+3c342800	Caelid - Far North Radahn Arena
+3c342900	Greyoll's Dragonbarrow - Southeast Farum Greatbridge, Lenne's Rise
+3c342a00	Greyoll's Dragonbarrow - Northeast Farum Greatbridge
+3c342b00	Greyoll's Dragonbarrow - Northeast Cliffside
+3c343400	Mountaintops of the Giants - Southwest Fire Giant Arena
+3c343500	Mountaintops of the Giants - Northwest Fire Giant Arena, Foot of the Forge
+3c343600	Mountaintops of the Giants - Northeast Giants' Gravepost
+3c343700	Mountaintops of the Giants - Guardians' Garrison
+3c343800	Mountaintops of the Giants - Whiteridge Road, Minor Erdtree
+3c343900	Mountaintops of the Giants - Before Freezing Lake, Heretical Rise
+3c343a00	Mountaintops of the Giants - Northwest of Freezing Lake, East of Castle Sol
+3c352600	Caelid - East Radahn Arena
+3c352700	Caelid - Northeast Radahn Arena
+3c353400	Mountaintops of the Giants - Southeast Fire Giant Arena
+3c353500	Mountaintops of the Giants - Northeast Fire Giant Arena
+3c353600	Mountaintops of the Giants - Giants' Gravepost Northeast Cliffside
+3c353700	Mountaintops of the Giants - West of First Church of Marika
+3c353800	Mountaintops of the Giants - Southwest Freezing Lake, Lord Contender's Evergaol, Spiritcaller Cave Entrance
+3c353900	Mountaintops of the Giants - Northwest Freezing Lake
+3c353a00	Mountaintops of the Giants - Freezing Lake North Cliffside
+3c363500	Mountaintops of the Giants - Forge of the Giants
+3c363700	Mountaintops of the Giants - First Church of Marika
+3c363800	Mountaintops of the Giants - Southeast Freezing Lake
+3c363900	Mountaintops of the Giants - Northeast Freezing Lake

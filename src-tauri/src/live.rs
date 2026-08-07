@@ -22,6 +22,77 @@ use crate::games::Game;
 /// does, and `find_only` refuses a pattern that matches twice.
 const GAME_DATA_MAN: &str = "48 8B 05 ?? ?? ?? ?? 48 85 C0 74 05 48 8B 40 58 C3 C3";
 
+/// The same, for the pointer to the world and everything standing in it.
+const WORLD_CHR_MAN: &str = "48 8B 05 ?? ?? ?? ?? 48 85 C0 74 0F 48 39 88";
+
+/// Where the player is, and which map they are on.
+///
+/// `[[WorldChrMan + 0x10EF8] + 0] + 0x6C0` is a block of four values: X, Z, Y
+/// and the map id. This is the chain The Grand Archives' table reads, which is
+/// the reason it is a lookup here and not a hunt — two afternoons of watching
+/// what moved while somebody walked found the camera and a lot of scenery.
+mod world {
+    pub const PLAYER: usize = 0x10EF8;
+    pub const BLOCK: usize = 0x6C0;
+    pub const X: usize = 0x00;
+    pub const Z: usize = 0x04;
+    pub const Y: usize = 0x08;
+    pub const MAP: usize = 0x10;
+}
+
+/// Map ids and the places they are, one per line: hex id, tab, name.
+///
+/// Kept as data rather than code — it is three hundred and eighty lines of
+/// somebody else's careful survey work, and it belongs in a file that can be
+/// replaced when the next area is added.
+const MAP_NAMES: &str = include_str!("../assets/map-names.tsv");
+
+/// What to call the map the player is standing on.
+///
+/// The overworld is a grid of tiles and only the ones worth naming are named,
+/// so a tile with no entry falls back to its neighbours: being told "Liurnia of
+/// the Lakes" from one tile over is right, and being told nothing is not.
+pub fn place(map: u32) -> Option<String> {
+    let named = |id: u32| -> Option<&'static str> {
+        MAP_NAMES.lines().find_map(|line| {
+            let (key, name) = line.split_once('\t')?;
+            (u32::from_str_radix(key, 16).ok()? == id).then_some(name)
+        })
+    };
+
+    if let Some(name) = named(map) {
+        return Some(name.to_string());
+    }
+
+    // The overworld only. A legacy dungeon with no entry is not a tile and has
+    // no neighbours to borrow from.
+    if (map >> 24) & 0xff != 60 {
+        return None;
+    }
+    let (x, y) = ((map >> 16) & 0xff, (map >> 8) & 0xff);
+    for ring in 1..=2i64 {
+        for dx in -ring..=ring {
+            for dy in -ring..=ring {
+                if dx.abs() != ring && dy.abs() != ring {
+                    continue;
+                }
+                let (nx, ny) = (x as i64 + dx, y as i64 + dy);
+                if !(0..=255).contains(&nx) || !(0..=255).contains(&ny) {
+                    continue;
+                }
+                let near = (60 << 24) | ((nx as u32) << 16) | ((ny as u32) << 8);
+                if let Some(name) = named(near) {
+                    // Only the region, since the landmark belongs to the tile
+                    // next door rather than to this one.
+                    let region = name.split(" - ").next().unwrap_or(name);
+                    return Some(format!("near {region}"));
+                }
+            }
+        }
+    }
+    None
+}
+
 /// Verified against a live 1.16.1 (executable 2.6.1.0).
 mod at {
     pub const HP: usize = 0x10;
@@ -64,6 +135,20 @@ pub struct Live {
     pub stamina: u32,
     pub stamina_max: u32,
     pub stats: Vec<(String, u32)>,
+    /// Where they are standing, when the game has a world open.
+    pub place: Option<Place>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Place {
+    /// `m60_35_44_00`, as the game's own files name it.
+    pub map: String,
+    /// What that is, in words.
+    pub name: Option<String>,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
 }
 
 pub fn read(game: Game) -> Option<Live> {
@@ -82,7 +167,51 @@ pub fn read(game: Game) -> Option<Live> {
     let data = pointer(&process, manager + 0x08)?;
     let block = process.read(data, 0x100);
 
-    parse_block(&block)
+    let mut live = parse_block(&block)?;
+    live.place = where_they_are(&process, &image, base);
+    Some(live)
+}
+
+/// The map and the coordinates, when a world is loaded.
+///
+/// Optional all the way down: at the title screen and during a load there is no
+/// player and no map, and the right answer then is silence.
+fn where_they_are(
+    process: &crate::unlock::win::Process,
+    image: &[u8],
+    base: usize,
+) -> Option<Place> {
+    let found = crate::unlock::find_only(image, &crate::unlock::parse(WORLD_CHR_MAN))?;
+    let displacement = i32::from_le_bytes(image.get(found + 3..found + 7)?.try_into().ok()?);
+    let slot = (base + found + 7).checked_add_signed(displacement as isize)?;
+
+    let world = pointer(process, slot)?;
+    let player = pointer(process, world + world::PLAYER)?;
+    let inner = pointer(process, player)?;
+
+    let block = process.read(inner + world::BLOCK, 0x20);
+    let float = |at: usize| -> Option<f32> {
+        let value = f32::from_le_bytes(block.get(at..at + 4)?.try_into().ok()?);
+        value.is_finite().then_some(value)
+    };
+    let map = u32::from_le_bytes(block.get(world::MAP..world::MAP + 4)?.try_into().ok()?);
+    if map == 0 {
+        return None;
+    }
+
+    Some(Place {
+        map: format!(
+            "m{:02}_{:02}_{:02}_{:02}",
+            (map >> 24) & 0xff,
+            (map >> 16) & 0xff,
+            (map >> 8) & 0xff,
+            map & 0xff
+        ),
+        name: place(map),
+        x: float(world::X)?,
+        y: float(world::Y)?,
+        z: float(world::Z)?,
+    })
 }
 
 /// The same, from bytes, so the checks can be tested without a game.
@@ -135,6 +264,7 @@ fn parse_block(block: &[u8]) -> Option<Live> {
             .zip(stats)
             .map(|(what, value)| ((*what).to_string(), value))
             .collect(),
+        place: None,
     })
 }
 
@@ -216,6 +346,44 @@ mod tests {
         let mut mad = real();
         mad[at::STATS..at::STATS + 4].copy_from_slice(&255u32.to_le_bytes());
         assert!(parse_block(&mad).is_none());
+    }
+
+    #[test]
+    fn a_map_id_becomes_somewhere_a_person_knows() {
+        // The id the running game gave while the player stood in Liurnia.
+        assert_eq!(
+            place(0x3c232c00).as_deref(),
+            Some("Liurnia of the Lakes - Far West Gate Town, North Rose Church")
+        );
+
+        // Legacy dungeons are named outright.
+        assert_eq!(place(0x0a000000).as_deref(), Some("Stormveil Castle"));
+        assert_eq!(place(0x0b0a0000).as_deref(), Some("Roundtable Hold"));
+
+        // An overworld tile nobody surveyed borrows its region from next door,
+        // and says that it is doing so.
+        let borrowed = place(0x3c232d00);
+        assert!(
+            borrowed.as_deref().is_none_or(|name| name.starts_with("near ")
+                || name.starts_with("Liurnia")),
+            "got {borrowed:?}"
+        );
+
+        // Nothing invented for an id that is not a map.
+        assert!(place(0).is_none());
+        assert!(place(0xffffffff).is_none());
+    }
+
+    #[test]
+    fn every_line_of_the_map_table_parses() {
+        let mut count = 0;
+        for line in MAP_NAMES.lines().filter(|l| !l.trim().is_empty()) {
+            let (key, name) = line.split_once('\t').unwrap_or_else(|| panic!("no tab: {line}"));
+            u32::from_str_radix(key, 16).unwrap_or_else(|_| panic!("not hex: {key}"));
+            assert!(!name.trim().is_empty(), "no name: {line}");
+            count += 1;
+        }
+        assert!(count > 300, "only {count} maps");
     }
 
     #[test]

@@ -409,12 +409,14 @@ fn tool_schemas() -> serde_json::Value {
             "function": {
                 "name": "player_status",
                 "description":
-                    "What this player's own game looks like right now: their characters and \
-                     levels from the save file, which game version they are on, which total \
-                     conversion is installed, and which mods are enabled. Use it when the \
-                     answer depends on where they actually are — whether something is worth \
-                     it at their level, whether they already have the mod a thing needs, why \
-                     something in a guide does not match their game. Takes no arguments.",
+                    "This player's own game. When it is running: their level, runes, health, \
+                     all eight attributes, and the region of the map they are standing in — \
+                     every one of those as of this second, read out of the game itself. \
+                     Otherwise the same from their save file, plus the game version, which \
+                     total conversion is installed and which mods are on. Use it whenever the \
+                     answer depends on where they actually are: whether a boss is worth \
+                     attempting at their level, whether they meet a weapon's requirements, \
+                     what is near them, why a guide does not match their game. No arguments.",
                 // Empty rather than absent: a tool with no arguments still has
                 // to look like every other tool, and some providers reject a
                 // schema that leaves either of these out.
@@ -754,6 +756,39 @@ async fn run_tool(
         "player_status" => {
             let mut out = String::new();
 
+            // The running game first, because it is the only source that is
+            // current. The save is whichever slot was written last and whatever
+            // it held at the last grace.
+            let live = player.live.as_ref().and_then(|read| read());
+            if let Some(live) = &live {
+                out.push_str("The game is open and this is the character in it, right now:\n");
+                out.push_str(&format!(
+                    "  {} — level {}, {} runes held, {} earned all told\n",
+                    live.name, live.level, live.runes, live.runes_ever
+                ));
+                out.push_str(&format!(
+                    "  {}/{} HP, {}/{} FP, {}/{} stamina\n",
+                    live.hp, live.hp_max, live.fp, live.fp_max, live.stamina, live.stamina_max
+                ));
+                let stats: Vec<String> = live
+                    .stats
+                    .iter()
+                    .map(|(what, value)| format!("{what} {value}"))
+                    .collect();
+                out.push_str(&format!("  {}\n", stats.join(", ")));
+                if let Some(place) = &live.place {
+                    out.push_str(&format!(
+                        "  Standing in: {} — map {}, at {:.0}, {:.0}, {:.0}\n",
+                        place.name.as_deref().unwrap_or("an unnamed part of the map"),
+                        place.map,
+                        place.x,
+                        place.y,
+                        place.z
+                    ));
+                }
+                out.push('\n');
+            }
+
             out.push_str(&format!(
                 "Game version: {}\n",
                 player.version.as_deref().unwrap_or("unknown")
@@ -766,7 +801,12 @@ async fn run_tool(
             if player.characters.is_empty() {
                 out.push_str("No save file found, so no characters to report.\n");
             } else {
-                out.push_str("Characters:\n");
+                out.push_str(if live.is_some() {
+                    "In the save, which is as of their last rest and may be a different slot:\n"
+                } else {
+                    "Characters, from the save file — the game is not running, so this is \
+                     where they were when they last rested:\n"
+                });
                 for (name, level, seconds) in &player.characters {
                     out.push_str(&format!(
                         "  {name} — level {level}, {} hours played\n",
