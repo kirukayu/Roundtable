@@ -22,7 +22,7 @@ export function PerfCard({ game }: { game: GameId }) {
   const toast = useToast();
   const [status, setStatus] = useState<PerfStatus | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [busy, setBusy] = useState<"smooth" | "unlock" | null>(null);
+  const [busy, setBusy] = useState<"smooth" | "unlock" | "bounce" | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -161,6 +161,45 @@ export function PerfCard({ game }: { game: GameId }) {
         refuses while it is armed.
         {status.unlocker && " An unlocker DLL is also in the game folder; it is not needed."}
       </p>
+
+      <hr className="hr" />
+
+      {/*
+        Windows sometimes leaves the desktop at its full refresh on paper while
+        the pointer is still drawn at sixty — usually after a game exits or after
+        sleep. Nothing looks wrong in Settings, because nothing is. Picking
+        another refresh rate and picking this one back rebuilds the mode, which
+        is the cure people find by hand.
+      */}
+      <div className="between">
+        <div>
+          <div className="w3" style={{ fontSize: "var(--t-sm)" }}>
+            Pointer moving in steps
+          </div>
+          <div className="w4" style={{ fontSize: "var(--t-xs)", marginTop: 2, lineHeight: 1.7 }}>
+            Windows can leave the cursor at 60 while the desktop says otherwise.
+            Rebuilding the display mode fixes it. Shift F2 does this mid-game.
+          </div>
+        </div>
+        <button
+          type="button"
+          className="btn btn--sm"
+          disabled={busy !== null}
+          onClick={async () => {
+            setBusy("bounce");
+            try {
+              toast.success("Fixed", await api.perfBounce());
+            } catch (error) {
+              toast.error("Could not", error instanceof Error ? error.message : String(error));
+            } finally {
+              setBusy(null);
+            }
+          }}
+        >
+          {busy === "bounce" ? <span className="spin" /> : null}
+          Fix it
+        </button>
+      </div>
 
       {status.path && (
         <>

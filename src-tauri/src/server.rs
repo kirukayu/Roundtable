@@ -126,6 +126,7 @@ pub async fn start(app: Arc<AppState>) -> crate::error::Result<Server> {
         .route("/perf/smooth", post(perf_smooth))
         .route("/perf/set", post(perf_set))
         .route("/perf/unlock", post(perf_unlock))
+        .route("/perf/bounce", post(perf_bounce))
         .route("/tune", get(tune_status).post(tune_apply))
         .route("/tune/revert", post(tune_revert))
         .route("/ask", post(ask_question))
@@ -1179,6 +1180,15 @@ async fn erss_uninstall(State(ctx): State<Ctx>, Json(body): Json<ErssBody>) -> R
     match ctx.app.active_install(body.game) {
         Ok(install) => out(crate::erss::uninstall(&install.game_dir)),
         Err(error) => out::<()>(Err(error)),
+    }
+}
+
+/// Unsticks a juddering pointer by rebuilding the display mode.
+async fn perf_bounce() -> Response {
+    // Blocking, and it sleeps for most of a second: off the async threads.
+    match tokio::task::spawn_blocking(crate::perf::bounce_refresh).await {
+        Ok(result) => out(result),
+        Err(error) => out::<String>(Err(crate::error::Error::msg(error.to_string()))),
     }
 }
 

@@ -719,6 +719,99 @@ fn display_mode() -> Option<String> {
     Some(format!("{width}x{height} at {hz} Hz"))
 }
 
+/// Re-applies the display mode, which is what unsticks a juddering pointer.
+///
+/// Windows sometimes leaves the desktop nominally at its full refresh while the
+/// cursor is still being drawn at sixty — usually after a game exits, after
+/// sleep, or after a mode change went badly. The pointer then moves in visible
+/// steps and nothing in the interface looks wrong, because nothing is: the
+/// number in Settings is correct.
+///
+/// The cure people find by hand is to pick another refresh rate and pick the
+/// original back, which tears the mode down and rebuilds it. That is exactly
+/// what this does, so it takes a button instead of four menus.
+#[cfg(windows)]
+pub fn bounce_refresh() -> Result<String> {
+    use windows_sys::Win32::Graphics::Gdi::{
+        ChangeDisplaySettingsExW, EnumDisplaySettingsW, CDS_TYPE, DEVMODEW, DISP_CHANGE_SUCCESSFUL,
+        DM_DISPLAYFREQUENCY, ENUM_CURRENT_SETTINGS,
+    };
+
+    unsafe {
+        let mut current: DEVMODEW = std::mem::zeroed();
+        current.dmSize = std::mem::size_of::<DEVMODEW>() as u16;
+        if EnumDisplaySettingsW(std::ptr::null(), ENUM_CURRENT_SETTINGS, &mut current) == 0 {
+            return Err(Error::msg("could not read the display mode".to_string()));
+        }
+        let wanted = current.dmDisplayFrequency;
+
+        // Another refresh rate at exactly this resolution and depth. Changing
+        // the size as well would rearrange every window on the desktop.
+        let mut other = None;
+        let mut index = 0u32;
+        loop {
+            let mut mode: DEVMODEW = std::mem::zeroed();
+            mode.dmSize = std::mem::size_of::<DEVMODEW>() as u16;
+            if EnumDisplaySettingsW(std::ptr::null(), index, &mut mode) == 0 {
+                break;
+            }
+            index += 1;
+            if mode.dmPelsWidth == current.dmPelsWidth
+                && mode.dmPelsHeight == current.dmPelsHeight
+                && mode.dmBitsPerPel == current.dmBitsPerPel
+                && mode.dmDisplayFrequency != wanted
+                && mode.dmDisplayFrequency >= 24
+            {
+                // The nearest one, so the flicker is as brief as possible.
+                let distance = mode.dmDisplayFrequency.abs_diff(wanted);
+                match other {
+                    Some((_, best)) if best <= distance => {}
+                    _ => other = Some((mode.dmDisplayFrequency, distance)),
+                }
+            }
+        }
+
+        let Some((step, _)) = other else {
+            return Err(Error::msg(
+                "this display only offers one refresh rate, so there is nothing to bounce"
+                    .to_string(),
+            ));
+        };
+
+        let mut apply = |hz: u32| -> i32 {
+            let mut mode = current;
+            mode.dmDisplayFrequency = hz;
+            mode.dmFields = DM_DISPLAYFREQUENCY;
+            ChangeDisplaySettingsExW(
+                std::ptr::null(),
+                &mut mode,
+                std::ptr::null_mut(),
+                0 as CDS_TYPE,
+                std::ptr::null(),
+            )
+        };
+
+        if apply(step) != DISP_CHANGE_SUCCESSFUL {
+            return Err(Error::msg("Windows refused the mode change".to_string()));
+        }
+        // Long enough for the mode to actually take before it is undone.
+        std::thread::sleep(std::time::Duration::from_millis(900));
+
+        if apply(wanted) != DISP_CHANGE_SUCCESSFUL {
+            return Err(Error::msg(format!(
+                "the display is stuck at {step} Hz — set it back to {wanted} in Windows"
+            )));
+        }
+
+        Ok(format!("Display bounced through {step} Hz and back to {wanted}"))
+    }
+}
+
+#[cfg(not(windows))]
+pub fn bounce_refresh() -> Result<String> {
+    Err(Error::msg("only on Windows".to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

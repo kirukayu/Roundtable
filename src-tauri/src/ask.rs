@@ -24,6 +24,44 @@ use crate::error::{Error, Result};
 
 /// Where the answers come from. No key: the service holds those.
 const SERVICE: &str = "https://roundtable-ask.roundtable-launcher.workers.dev/ask";
+/// Where a question is turned into the words the wiki uses.
+const PLANNER: &str = "https://roundtable-ask.roundtable-launcher.workers.dev/terms";
+
+/// Asks a model what to search for.
+///
+/// The glossary below still exists and still runs, but it is the fallback now.
+/// It only ever knew the Russian words somebody had thought to add, and a table
+/// like that is wrong in a new way every week — it knew "убить" and not "как
+/// задавить", and nothing at all in Polish. A model reads the question and
+/// names the articles, in any language, for the price of one call to the
+/// fastest lane.
+///
+/// Returns nothing when the service is unreachable or slow, and the local
+/// glossary carries the question on its own. Being offline should cost accuracy,
+/// not the feature.
+async fn planned_terms(http: &reqwest::Client, question: &str) -> Vec<String> {
+    let Ok(reply) = http
+        .post(PLANNER)
+        .json(&serde_json::json!({ "question": question }))
+        .timeout(std::time::Duration::from_secs(9))
+        .send()
+        .await
+    else {
+        return Vec::new();
+    };
+
+    #[derive(Deserialize)]
+    struct Terms {
+        #[serde(default)]
+        terms: Vec<String>,
+    }
+
+    reply
+        .json::<Terms>()
+        .await
+        .map(|body| body.terms)
+        .unwrap_or_default()
+}
 
 /// Words that match everything and therefore mean nothing, in both languages
 /// the launcher is used in.
@@ -39,6 +77,12 @@ const NOISE: &[&str] = &[
     "и", "в", "на", "с", "по", "за", "из", "до", "от", "у", "о", "об", "для", "не", "ли", "же",
     "бы", "ну", "вот", "если", "или", "а", "но", "то", "так", "уже", "ещё", "еще", "надо",
     "нужно", "можно", "лучше", "самый", "всё", "все",
+    // The names of the game and the mod. Somebody asking "как качаться в
+    // Convergence" is telling us which wiki to read, not what to read in it —
+    // and left in, "convergence" prefix-matched "Convert Corruption" and
+    // "Converted Tower" and pushed the real answer out of every slot.
+    "elden", "ring", "convergence", "элден", "ринг", "конвергенс", "конверг",
+    "игре", "игры", "игру", "игра", "game",
 ];
 
 /// Splits a question into the words worth searching for.
@@ -128,8 +172,21 @@ const GLOSS: &[(&str, &str)] = &[
     ("закли", "incantation"), ("магия", "sorcery"), ("маги", "sorcery"),
     ("пепел", "ashes"), ("призв", "summon"), ("фаза", "phase"), ("фазы", "phase"),
     ("хил", "heal"), ("леч", "heal"), ("парир", "parry"), ("уклон", "dodge"),
-    ("блок", "block"), ("прокач", "level"), ("билд", "build"), ("статы", "stats"),
-    ("руны", "runes"), ("квест", "quest"), ("конц", "ending"),
+    ("блок", "block"), ("билд", "build"), ("квест", "quest"), ("конц", "ending"),
+    // Levelling. Neither wiki has a page called "Leveling" — the answer lives
+    // in "Attributes", "Stats and Attributes" and "Runes" — and glossing this
+    // to "level" was worse than nothing, because it matched "Gaol Lower Level
+    // Key". The gloss has to name the article, not translate the word.
+    ("прокач", "attributes"), ("прокач", "runes"),
+    ("качат", "attributes"), ("качат", "runes"), ("качат", "stats"),
+    ("качаю", "attributes"), ("качая", "attributes"),
+    ("уровен", "attributes"), ("уровн", "attributes"), ("лвл", "attributes"),
+    ("руна", "runes"), ("руны", "runes"), ("рун", "runes"),
+    ("фарм", "farming"), ("гринд", "farming"),
+    ("класс", "class"), ("стат", "stats"), ("характер", "stats"),
+    ("сила", "strength"), ("ловк", "dexterity"), ("интел", "intelligence"),
+    ("вера", "faith"), ("выносл", "endurance"), ("здоров", "vigor"),
+    ("старт", "starting"), ("начал", "starting"), ("нович", "beginner"),
 ];
 
 /// Every spelling of a question word worth searching for.
@@ -368,14 +425,58 @@ pub async fn gather(
     question: &str,
     want: usize,
 ) -> Vec<Passage> {
-    let source = crate::wiki::for_edition(edition);
-    let titles = crate::wiki::titles(app_data, source.id);
-    if titles.is_empty() {
-        return Vec::new();
+    // Both wikis, not one.
+    //
+    // Somebody playing The Convergence still asks about vanilla bosses, and
+    // somebody playing vanilla still hears about a Convergence spell from a
+    // friend. The mod keeps most of the base game, so the two overlap heavily
+    // and neither alone is the right answer. Whichever edition is loaded is
+    // searched first and its articles win ties, but the other is there.
+    let first = crate::wiki::for_edition(edition);
+    let mut wikis = vec![first];
+    for other in crate::wiki::SOURCES {
+        if other.id != first.id {
+            wikis.push(other);
+        }
+    }
+
+    // What a model thinks the wiki calls this, appended to the question. The
+    // ranking sees both, so a term the planner gets wrong costs nothing and a
+    // term it gets right is usually the article name itself.
+    let planned = planned_terms(http, question).await;
+    let query = if planned.is_empty() {
+        question.to_string()
+    } else {
+        format!("{question} {}", planned.join(" "))
+    };
+
+    let ranked: Vec<(&'static crate::wiki::WikiSource, Vec<String>)> = wikis
+        .iter()
+        .map(|source| {
+            let titles = crate::wiki::titles(app_data, source.id);
+            let hits = rank_titles(&titles, &query, want)
+                .into_iter()
+                .cloned()
+                .collect();
+            (*source, hits)
+        })
+        .collect();
+
+    // Taken in turn rather than in order, so the second wiki is always
+    // represented. Straight concatenation meant the first wiki filled every
+    // slot and the other might as well not have been searched.
+    let mut wanted: Vec<(&'static crate::wiki::WikiSource, &String)> = Vec::new();
+    let deepest = ranked.iter().map(|(_, hits)| hits.len()).max().unwrap_or(0);
+    for rank in 0..deepest {
+        for (source, hits) in &ranked {
+            if let Some(title) = hits.get(rank) {
+                wanted.push((source, title));
+            }
+        }
     }
 
     let mut passages = Vec::new();
-    for title in rank_titles(&titles, question, want * 2) {
+    for (source, title) in wanted {
         if passages.len() >= want {
             break;
         }
@@ -387,9 +488,27 @@ pub async fn gather(
         if text.chars().count() < 120 {
             continue;
         }
+
+        // Which wiki said it, in the title the model reads. The Convergence
+        // rebalances most of the base game, so the same boss has two sets of
+        // numbers — an answer that quietly mixes them is worse than none.
+        let labelled = format!("{} · {}", page.title, source.name);
+        if passages.iter().any(|p: &Passage| p.title == labelled) {
+            continue;
+        }
+
+        // The best-matching article gets far more room than the rest.
+        //
+        // Picking the right two thousand characters out of a twenty-thousand
+        // word article is guesswork, and it kept guessing wrong: a question
+        // about how to fight a boss landed on her lore and the answer came back
+        // "the passages do not say". The models here take a hundred thousand
+        // tokens, so the honest fix is to stop guessing and send the section
+        // that matters along with everything around it.
+        let size = if passages.is_empty() { 7000 } else { 1800 };
         passages.push(Passage {
-            title: page.title,
-            text: best_window(&text, question, 2000),
+            title: labelled,
+            text: best_window(&text, &query, size),
         });
     }
     passages
@@ -566,6 +685,37 @@ mod tests {
         let all = titles();
         let hits = rank_titles(&all, "what is scarlet rot", 3);
         assert_eq!(hits[0].as_str(), "Scarlet Rot", "got {hits:?}");
+    }
+
+    #[test]
+    fn the_name_of_the_game_is_not_a_search_term() {
+        // "Как качаться в Convergence" was answered with "Convert Corruption"
+        // and "Converted Tower": the mod's own name prefix-matched them and
+        // filled every slot. It says which wiki, not what to look for in it.
+        // These are the titles the wikis actually carry — there is no page
+        // called "Leveling", which is why the gloss names the article rather
+        // than translating the verb.
+        let all = vec![
+            "Convert Corruption".to_string(),
+            "Converted Tower".to_string(),
+            "Gaol Lower Level Key".to_string(),
+            "Stats and Attributes".to_string(),
+            "Attributes".to_string(),
+            "Runes".to_string(),
+        ];
+        let hits = rank_titles(&all, "Как качаться в Convergence?", 3);
+        assert!(
+            hits.iter().any(|t| t.contains("Attributes")),
+            "levelling means attributes and runes: {hits:?}"
+        );
+        assert!(
+            !hits.iter().any(|t| t.starts_with("Convert")),
+            "the mod's name must not drag these in: {hits:?}"
+        );
+        assert!(
+            !hits.iter().any(|t| t.contains("Gaol")),
+            "a key with Level in its name is not how you level up: {hits:?}"
+        );
     }
 
     #[test]

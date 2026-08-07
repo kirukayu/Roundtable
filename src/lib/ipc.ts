@@ -213,6 +213,8 @@ export const api = {
   /* Rewrites the frame cap in the running game. 0 puts the shipped 60 back. */
   perfUnlock: (game: GameId, fps: number) =>
     post<UnlockReport>("/perf/unlock", { game, fps }),
+  /* Rebuilds the display mode, which unsticks a juddering pointer. */
+  perfBounce: () => post<string>("/perf/bounce", {}),
 
   /* The Windows levers the game cannot reach, and the one button for all of it. */
   tune: (game: GameId) => get<TuneStatus>("/tune", { game }),

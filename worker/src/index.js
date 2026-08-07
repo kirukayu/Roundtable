@@ -36,7 +36,7 @@
  */
 
 /** Bumped by hand on each deploy, so `/health` can prove which code is live. */
-const BUILD = "2026-08-07.5";
+const BUILD = "2026-08-07.6";
 
 /**
  * One lane per (provider, model). Every one of these was timed from a
@@ -173,10 +173,49 @@ somebody a run.
 Answer in the language the question was asked in. Be brief: two or three
 sentences unless more is asked for. No preamble, no restating the question.`;
 
+/**
+ * Turning a question into the words the wiki uses.
+ *
+ * Kept deliberately narrow. The model is not being asked to answer anything
+ * here, only to name things — and naming things is what a model is reliably
+ * good at across languages, where a lookup table is not.
+ */
+const PLANNER = `You turn a player's question into search terms for the ELDEN RING wiki,
+which is written in English.
+
+Reply with ONE line: comma-separated English terms, nothing else. No numbering,
+no explanation, no quotes.
+
+Give the proper names as the wiki spells them, plus the words its article
+headings use. If the question is in another language, translate it. If it names
+a thing, that name comes first.
+
+"The Convergence" is a total conversion mod for the game, not a game mechanic.
+When somebody names it they are saying which version they are playing, so drop
+it and answer for the thing they actually asked about.
+
+Examples:
+Как убить Малению? -> Malenia Blade of Miquella, boss, strategy, Waterfowl Dance, Scarlet Rot
+Как качаться в Convergence? -> Attributes, Runes, level up, Site of Grace, stats
+what's the best bleed weapon -> Rivers of Blood, Bloodhound's Fang, blood loss, Arcane, weapons
+где найти коня -> Torrent, Spectral Steed Whistle, Melina, mount`;
+
+function plan(question) {
+  return [
+    { role: "system", content: PLANNER },
+    { role: "user", content: `${question} ->` },
+  ];
+}
+
 function prompt(question, passages) {
+  // The first passage is the best-matching article and gets far more room than
+  // the rest. Cutting every one to the same couple of thousand characters kept
+  // slicing the section that held the answer in half, and the model then said
+  // the passages did not cover it — which was true, and avoidable. Every lane
+  // here takes tens of thousands of tokens.
   const context = (passages ?? [])
     .slice(0, 4)
-    .map((p, i) => `[${i + 1}] ${p.title}\n${String(p.text).slice(0, 2400)}`)
+    .map((p, i) => `[${i + 1}] ${p.title}\n${String(p.text).slice(0, i === 0 ? 8000 : 2000)}`)
     .join("\n\n");
   return [
     { role: "system", content: SYSTEM },
@@ -423,6 +462,50 @@ export default {
         }),
       );
       return json(out.sort((a, b) => (a.ms ?? 1e9) - (b.ms ?? 1e9)));
+    }
+
+    // What to search the wiki for, worked out by a model rather than by a table.
+    //
+    // The launcher does its own retrieval, and to do that it needs English
+    // search terms — both wikis are written in English and a great many players
+    // are not. That was a hand-written glossary of Russian words, which had to
+    // grow an entry every time something missed and never generalised: it knew
+    // "убить" but not "как задавить", and nothing at all in Polish.
+    //
+    // A model does the whole job properly for the price of one fast call. It
+    // sees the question, and returns the words the wiki would use.
+    if (url.pathname === "/terms" && request.method === "POST") {
+      const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
+      const gate = await allowed(env, ip);
+      if (!gate.ok) return json({ terms: [] });
+
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "expected JSON" }, 400);
+      }
+      const question = String(body.question ?? "").trim().slice(0, 600);
+      if (!question) return json({ terms: [] });
+
+      const result = await askPool(env, plan(question), 9000);
+      if (result.error) return json({ terms: [], why: result.error });
+
+      // A model told to answer with a list will sometimes explain itself first.
+      // Take the last line that looks like a list and ignore the rest.
+      const line = result.text
+        .split("\n")
+        .map((l) => l.replace(/^[^A-Za-z]*/, "").trim())
+        .filter((l) => l.length > 0 && !l.endsWith(":"))
+        .pop() ?? "";
+
+      const terms = line
+        .split(",")
+        .map((t) => t.replace(/[^\w' -]/g, "").trim())
+        .filter((t) => t.length > 1 && t.length < 40)
+        .slice(0, 8);
+
+      return json({ terms, lane: result.lane, ms: result.ms });
     }
 
     if (url.pathname !== "/ask" || request.method !== "POST") {

@@ -304,16 +304,31 @@ pub fn run() {
             {
                 use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
 
-                let hotkey = Shortcut::new(Some(Modifiers::SHIFT), Code::F1);
+                let overlay = Shortcut::new(Some(Modifiers::SHIFT), Code::F1);
+                // The pointer going jerky happens mid-game, and the cure is a
+                // display mode rebuild. Alt-tabbing to a menu to fix a problem
+                // that is *caused* by leaving a game is no cure at all.
+                let bounce = Shortcut::new(Some(Modifiers::SHIFT), Code::F2);
+
                 app.handle().plugin(
                     tauri_plugin_global_shortcut::Builder::new()
                         .with_handler(move |app, pressed, event| {
                             // Both edges arrive; acting on the release as well
                             // would toggle it straight back shut.
-                            if *pressed == hotkey && event.state() == ShortcutState::Pressed {
+                            if event.state() != ShortcutState::Pressed {
+                                return;
+                            }
+                            if *pressed == overlay {
                                 let handle = app.clone();
                                 let _ = app.run_on_main_thread(move || {
                                     let _ = overlay_toggle(handle);
+                                });
+                            } else if *pressed == bounce {
+                                // Blocking and nearly two seconds long, so it
+                                // must not sit on the event thread.
+                                std::thread::spawn(|| match crate::perf::bounce_refresh() {
+                                    Ok(what) => tracing::info!("{what}"),
+                                    Err(error) => tracing::warn!(%error, "display bounce failed"),
                                 });
                             }
                         })
@@ -321,11 +336,13 @@ pub fn run() {
                 )?;
 
                 use tauri_plugin_global_shortcut::GlobalShortcutExt;
-                if let Err(error) = app.global_shortcut().register(hotkey) {
-                    // Another program may already own the combination. That is
-                    // worth a line in the log and no more — the launcher is
-                    // still perfectly usable without it.
-                    tracing::warn!(%error, "could not register the overlay hotkey");
+                for (key, what) in [(overlay, "overlay"), (bounce, "display bounce")] {
+                    if let Err(error) = app.global_shortcut().register(key) {
+                        // Another program may already own the combination. Worth
+                        // a line in the log and no more — everything else still
+                        // works without it.
+                        tracing::warn!(%error, "could not register the {what} hotkey");
+                    }
                 }
             }
 
