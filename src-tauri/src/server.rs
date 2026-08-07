@@ -134,6 +134,8 @@ pub async fn start(app: Arc<AppState>) -> crate::error::Result<Server> {
         .route("/overlay/hide", post(overlay_hide))
         .route("/erss", get(erss_status).post(erss_install))
         .route("/erss/uninstall", post(erss_uninstall))
+        .route("/erss/set", post(erss_set))
+        .route("/erss/tune", post(erss_tune))
         .route("/language", get(language_status).post(language_set))
         .route("/language/edition", post(edition_text_install))
         .route("/language/edition/revert", post(edition_text_revert))
@@ -893,13 +895,24 @@ fn perf_roots(ctx: &Ctx, game: crate::games::Game) -> Vec<PathBuf> {
     roots
 }
 
+/// True when a frame-generation mod is in this install.
+///
+/// Two of the preset's answers change when there is one, and they change against
+/// the tier rather than with it — so without this the optimiser and the frame
+/// generation pane would each undo the other's work.
+fn generating_frames(ctx: &Ctx, game: crate::games::Game) -> bool {
+    ctx.app
+        .active_install(game)
+        .is_ok_and(|install| crate::erss::owns_the_frame_cap(&install.game_dir))
+}
+
 async fn perf_status(State(ctx): State<Ctx>, Query(q): Query<GameQ>) -> Response {
-    Json(crate::perf::status(q.game, &perf_roots(&ctx, q.game))).into_response()
+    let framegen = generating_frames(&ctx, q.game);
+    Json(crate::perf::status(q.game, &perf_roots(&ctx, q.game), framegen)).into_response()
 }
 
 async fn perf_smooth(State(ctx): State<Ctx>, Json(body): Json<GameQ>) -> Response {
-    let _ = &ctx;
-    out(crate::perf::smooth(body.game))
+    out(crate::perf::smooth(body.game, generating_frames(&ctx, body.game)))
 }
 
 #[derive(Deserialize)]
@@ -924,11 +937,24 @@ fn unlock_when_up(ctx: &Ctx, game: crate::games::Game) {
     let Some(fps) = ctx.app.settings.lock().unlock_fps else {
         return;
     };
+    let install = ctx.app.active_install(game);
     // With the anti-cheat armed this would be a ban, so it is never automatic.
-    if ctx
-        .app
-        .active_install(game)
+    if install
+        .as_ref()
         .is_ok_and(|install| install.has_eac && !install.eac_bypassed)
+    {
+        return;
+    }
+    // ERSS lifts the cap itself and has done unconditionally since its 4.7.0,
+    // where the author removed the option and fixed a conflict with other
+    // unlockers in the same release. Two patches rewriting one value in a live
+    // process is not a race that settles — it is the tearing and the uneven
+    // pointer that gets blamed on the display. Its limit is the better one
+    // anyway: it counts finished frames, so it holds through frame generation
+    // where a patched cap counts only the rendered ones.
+    if install
+        .as_ref()
+        .is_ok_and(|install| crate::erss::owns_the_frame_cap(&install.game_dir))
     {
         return;
     }
@@ -1011,7 +1037,7 @@ async fn tune_apply(State(ctx): State<Ctx>, Json(body): Json<GameQ>) -> Response
 
     let mut done: Vec<String> = Vec::new();
 
-    match crate::perf::smooth(body.game) {
+    match crate::perf::smooth(body.game, generating_frames(&ctx, body.game)) {
         Ok(changes) => done.extend(changes),
         // No config file yet is normal before the first launch, and the Windows
         // levers are still worth applying.
@@ -1025,11 +1051,18 @@ async fn tune_apply(State(ctx): State<Ctx>, Json(body): Json<GameQ>) -> Response
 
     // The cap this machine holds every frame, saved for the next launch and
     // written into the game if it is already up.
-    let cap = {
-        let status = crate::perf::status(body.game, &[]);
-        status.machine.suggested_cap
-    };
-    if cap > 60 {
+    //
+    // Unless the frame-generation mod is in, in which case the cap is its own —
+    // it lifts the sixty limit unconditionally and counts finished frames rather
+    // than rendered ones, and two patches writing one value in a live process is
+    // the tearing that gets blamed on the monitor.
+    let framegen = generating_frames(&ctx, body.game);
+    let cap = crate::perf::status(body.game, &[], framegen)
+        .machine
+        .suggested_cap;
+    if framegen {
+        done.push("Frame cap left to the frame-generation mod, which owns it".into());
+    } else if cap > 60 {
         {
             let mut settings = ctx.app.settings.lock();
             settings.unlock_fps = Some(cap);
@@ -1104,16 +1137,131 @@ struct AskQuery {
 
 /// DLSS, frame generation and Reflex, and whether the game is ready for them.
 async fn erss_status(State(ctx): State<Ctx>, Query(q): Query<GameQ>) -> Response {
-    match ctx.app.active_install(q.game) {
-        Ok(install) => Json(crate::erss::status(
-            &install.game_dir,
-            install.has_eac,
-            install.eac_bypassed,
-            crate::tune::gpu_scheduling_on(),
-        ))
-        .into_response(),
+    let Ok(install) = ctx.app.active_install(q.game) else {
+        return out::<()>(Err(crate::error::Error::msg("the game is not located yet")));
+    };
+    let hags = crate::tune::gpu_scheduling_on();
+    let mut status = crate::erss::status(&install.game_dir, install.has_eac, install.eac_bypassed, hags);
+
+    // Everything the mod's own post insists on, read off the machine. These are
+    // the things that make it look broken when it is only misconfigured.
+    let perf = crate::perf::status(q.game, &[], true);
+    let screen = perf.settings.iter().find(|s| s.key == "ScreenMode").map(|s| s.value.clone());
+    let game_res = crate::perf::game_resolution(q.game, screen.as_deref());
+    let display_res = crate::perf::display_geometry().map(|(w, h, _)| (w, h));
+
+    status.blockers = crate::erss::preflight(
+        &install.game_dir,
+        install.version.as_deref(),
+        install.has_eac,
+        install.eac_bypassed,
+        hags,
+        screen.as_deref(),
+        game_res,
+        display_res,
+    );
+
+    Json(status).into_response()
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ErssSetBody {
+    game: crate::games::Game,
+    key: String,
+    value: String,
+}
+
+/// Changes one of the mod's own settings, before the game starts.
+async fn erss_set(State(ctx): State<Ctx>, Json(body): Json<ErssSetBody>) -> Response {
+    match ctx.app.active_install(body.game) {
+        Ok(install) => out(crate::erss::set_setting(&install.game_dir, &body.key, &body.value)),
         Err(error) => out::<()>(Err(error)),
     }
+}
+
+/// Sets everything that shows up as an artefact once frames are generated.
+///
+/// The settings that matter are split across three files nobody would think to
+/// connect: the game's own graphics config holds the flickering light and the
+/// blur passes, the mod's config holds how far it upscales, and the frame cap
+/// lives in the running process. This does all three from one press, and reports
+/// each change with the artefact it removes rather than a list of key names.
+async fn erss_tune(State(ctx): State<Ctx>, Json(body): Json<GameQ>) -> Response {
+    let Ok(install) = ctx.app.active_install(body.game) else {
+        return out::<()>(Err(crate::error::Error::msg("the game is not located yet")));
+    };
+    out(Ok(no_artefacts(body.game, &install.game_dir)))
+}
+
+/// The whole artefact pass, run at install and again on demand.
+fn no_artefacts(game: crate::games::Game, dir: &std::path::Path) -> Vec<String> {
+    let machine = crate::perf::status(game, &[], true).machine;
+    let pixels = u64::from(machine.width) * u64::from(machine.height);
+    let mut applied: Vec<String> = Vec::new();
+
+    for fix in crate::erss::ARTEFACT_FIXES {
+        if crate::perf::set(game, fix.key, fix.value).is_ok() {
+            applied.push(format!("{} — {}", fix.value, fix.why));
+        }
+    }
+
+    // The mod writes its own config on first run, so before then there is
+    // nothing to change — seeding it is what makes this work on a fresh install.
+    let _ = crate::erss::seed(dir);
+
+    // Whether it is generating frames decides both of the answers below, and it
+    // is knowable once it has run: the setting is in its own config.
+    let framegen = crate::erss::setting_titled(dir, "Frame generation")
+        .as_ref()
+        .is_some_and(crate::erss::switched_on);
+
+    let (mode, label) = crate::erss::best_dlss_mode(machine.tier, pixels, framegen);
+    if crate::erss::set_setting(dir, "DLSSMode", mode).is_ok() {
+        applied.push(format!(
+            "DLSS at {label} — upscaling artefacts and generated frames compound, so it \
+             reconstructs as little as this card allows"
+        ));
+    }
+    // Generation is what buys the room to upscale less, so the answer above is
+    // a different one once it is switched on.
+    if !framegen {
+        let (_, with) = crate::erss::best_dlss_mode(machine.tier, pixels, true);
+        if with != label {
+            applied.push(format!(
+                "Turn frame generation on in its overlay, then press Tune again — there is \
+                 room for {with} once it is carrying half the frames"
+            ));
+        }
+    }
+
+    // The mod owns the frame limit and counts finished frames, so a generator
+    // doubling the rate is already in the number. It ships at 60, which is why
+    // frame generation so often appears to do nothing at all.
+    let target = if framegen {
+        crate::perf::suggested_cap_generated(machine.refresh_hz, machine.tier)
+    } else {
+        machine.suggested_cap
+    };
+    match crate::erss::setting_titled(dir, "Frame limit") {
+        Some(limit) => {
+            if crate::erss::set_setting(dir, &limit.key, &target.to_string()).is_ok() {
+                applied.push(format!(
+                    "{target} frames — a card held at its ceiling starves the generator, \
+                     which runs on the same shaders, and an even rate under the panel is \
+                     what stops the flicker"
+                ));
+            }
+        }
+        None => applied.push(
+            "Its frame limit ships at 60 and is the usual reason frame generation looks \
+             like it did nothing. It appears here once the game has run with the mod \
+             loaded, and this will set it then"
+                .into(),
+        ),
+    }
+
+    applied
 }
 
 #[derive(Deserialize)]
@@ -1164,14 +1312,10 @@ async fn erss_install(State(ctx): State<Ctx>, Json(body): Json<ErssBody>) -> Res
         Err(error) => return out::<()>(Err(error)),
     }
 
-    // Ray tracing on top of the mod is what makes the global illumination
-    // flicker, and it is the mod author's own first suggestion.
-    if crate::perf::set(body.game, "RaytracingQuality", "DISABLE").is_ok() {
-        done.push("Ray tracing off — it flickers the lighting with this mod".into());
-    }
-    if crate::perf::set(body.game, "GIDataQuality", "LOW").is_ok() {
-        done.push("Global illumination to low, for the same reason".into());
-    }
+    // Everything that shows as a generated-frame artefact, done here rather
+    // than left as a second button to find. Installing a frame generator and
+    // leaving the settings that fight it is half a job.
+    done.extend(no_artefacts(body.game, &install.game_dir));
 
     Json(json!({ "changes": done })).into_response()
 }

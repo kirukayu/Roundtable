@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Icon } from "./Icons";
 import { Card, Chip, useToast } from "./ui";
 import { api } from "../lib/ipc";
-import type { ErssStatus, GameId } from "../lib/types";
+import type { ErssSetting, ErssStatus, GameId } from "../lib/types";
 
 /**
  * DLSS, frame generation and Reflex, in a game that shipped with none of them.
@@ -24,9 +24,11 @@ export function ErssCard({ game }: { game: GameId }) {
   const toast = useToast();
   const [status, setStatus] = useState<ErssStatus | null>(null);
   const [password, setPassword] = useState("");
+  const [askPassword, setAskPassword] = useState(false);
   const [overlay, setOverlay] = useState(false);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string[]>([]);
+  const [fixes, setFixes] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     try {
@@ -60,11 +62,34 @@ export function ErssCard({ game }: { game: GameId }) {
     }
   };
 
+  /**
+   * The three files that decide whether generated frames look right, set at once.
+   *
+   * They are the game's own graphics config, the mod's config and the frame cap,
+   * and nobody would think to connect them — the flickering light this mod is
+   * known for is a global illumination setting, and the upscaler that feeds the
+   * generator its frames is somewhere else entirely.
+   */
+  const tune = async () => {
+    setBusy(true);
+    try {
+      const changed = await api.erssTune(game);
+      setFixes(changed);
+      toast.success("Tuned", `${changed.length} settings`);
+      await load();
+    } catch (error) {
+      toast.error("Could not tune", error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const remove = async () => {
     setBusy(true);
     try {
       const gone = await api.erssUninstall(game);
       setDone([]);
+      setFixes([]);
       toast.success("Removed", `${gone.length} files and folders`);
       await load();
     } catch (error) {
@@ -118,33 +143,56 @@ export function ErssCard({ game }: { game: GameId }) {
         </div>
       )}
 
-      {releases.length > 0 && !status.installed && (
+      {status.release && !status.installed && (
         <div className="between" style={{ marginBottom: "var(--s3)" }}>
           <span className="w3" style={{ fontSize: "var(--t-sm)" }}>
-            Newest release found
+            Will install
           </span>
           <span className="mono w4" style={{ fontSize: "var(--t-xs)" }}>
-            {releases[0].split("\\").pop()}
+            {status.release.split("\\").pop()}
           </span>
         </div>
       )}
 
-      {status.needsPassword && !status.installed && (
+      {/*
+        Encrypted releases open on their own — the author prints the password
+        beside the download, so asking for it would be asking somebody to fetch
+        something Roundtable already has. The field is here for the release that
+        changes it, folded away until it is wanted.
+      */}
+      {status.locked && !status.installed && (
         <div style={{ marginBottom: "var(--s3)" }}>
-          <label className="w3" style={{ fontSize: "var(--t-sm)", display: "block" }}>
-            Archive password
-          </label>
-          <input
-            type="password"
-            className="input"
-            style={{ marginTop: "var(--s2)", width: "100%" }}
-            value={password}
-            placeholder="from the post you downloaded it from"
-            onChange={(event) => setPassword(event.target.value)}
-          />
-          <p className="w4" style={{ fontSize: "var(--t-xs)", marginTop: "var(--s2)" }}>
-            The files inside are encrypted. Used to unpack them and not kept anywhere.
-          </p>
+          {!askPassword ? (
+            <div className="between">
+              <span className="w4" style={{ fontSize: "var(--t-xs)" }}>
+                That release is encrypted and opens with the published password
+              </span>
+              <button
+                type="button"
+                className="btn btn--sm"
+                onClick={() => setAskPassword(true)}
+              >
+                Use another
+              </button>
+            </div>
+          ) : (
+            <>
+              <label className="w3" style={{ fontSize: "var(--t-sm)", display: "block" }}>
+                Archive password
+              </label>
+              <input
+                type="password"
+                className="in"
+                style={{ marginTop: "var(--s2)", width: "100%" }}
+                value={password}
+                placeholder="from the post you downloaded it from"
+                onChange={(event) => setPassword(event.target.value)}
+              />
+              <p className="w4" style={{ fontSize: "var(--t-xs)", marginTop: "var(--s2)" }}>
+                Used to unpack it and not kept anywhere.
+              </p>
+            </>
+          )}
         </div>
       )}
 
@@ -192,6 +240,82 @@ export function ErssCard({ game }: { game: GameId }) {
         </div>
       )}
 
+      {/*
+        The mod's own settings, changed here rather than in its in-game overlay.
+        Turning frame generation on needs a restart anyway, so setting it before
+        the game starts is the shorter path — and the values are read back out of
+        its own file, so this stays right as the mod grows new ones.
+      */}
+      {status.installed && (
+        <>
+          <hr className="hr" />
+          <div className="between" style={{ marginBottom: "var(--s3)" }}>
+            <div>
+              <div className="w3" style={{ fontSize: "var(--t-sm)" }}>
+                Clean up the artefacts
+              </div>
+              <div className="w4" style={{ fontSize: "var(--t-2xs)", marginTop: 2 }}>
+                Generated frames are guessed from the two either side, so anything that
+                changes for reasons the motion cannot explain gets guessed wrong
+              </div>
+            </div>
+            <button type="button" className="btn btn--sm" onClick={tune} disabled={busy}>
+              {busy ? <span className="spin" /> : null}
+              Tune
+            </button>
+          </div>
+
+          {fixes.length > 0 && (
+            <div className="col" style={{ gap: "var(--s2)", marginBottom: "var(--s3)" }}>
+              {fixes.map((line) => (
+                <div className="row" style={{ gap: "var(--s2)", alignItems: "flex-start" }} key={line}>
+                  <Icon.Check size={13} />
+                  <span className="w4" style={{ fontSize: "var(--t-xs)", lineHeight: 1.6 }}>
+                    {line}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/*
+        The mod's own settings, changed here rather than in its in-game overlay.
+        Turning frame generation on needs a restart anyway, so setting it before
+        the game starts is the shorter path — and the values are read back out of
+        its own file, so this stays right as the mod grows new ones.
+      */}
+      {status.installed && status.settings.length > 0 && (
+        <>
+          <hr className="hr" />
+          <div className="between" style={{ marginBottom: "var(--s3)" }}>
+            <span className="w3" style={{ fontSize: "var(--t-sm)" }}>
+              Its settings
+            </span>
+            <span className="w4" style={{ fontSize: "var(--t-2xs)" }}>
+              Frame generation needs a restart
+            </span>
+          </div>
+          <div className="col2">
+            {status.settings.map((setting) => (
+              <ErssSettingRow
+                key={setting.key}
+                game={game}
+                setting={setting}
+                onDone={load}
+                disabled={busy}
+              />
+            ))}
+          </div>
+          <p className="w4" style={{ fontSize: "var(--t-2xs)", marginTop: "var(--s3)", lineHeight: 1.6 }}>
+            The rest of them — which upscaler, whether frames are generated, HDR — appear
+            here after the game has run once with the mod loaded. It names them itself
+            the first time, and Roundtable reads whatever it finds rather than assuming.
+          </p>
+        </>
+      )}
+
       {done.length > 0 && (
         <>
           <hr className="hr" />
@@ -205,5 +329,93 @@ export function ErssCard({ game }: { game: GameId }) {
         </>
       )}
     </Card>
+  );
+}
+
+/**
+ * One of the mod's settings.
+ *
+ * The control follows the value's own type, read out of the TOML: a boolean
+ * gets a toggle, a known set of choices gets buttons, anything else gets a
+ * field. That way a setting the mod adds in its next release still appears and
+ * still works, without this file knowing it exists.
+ */
+function ErssSettingRow({
+  game,
+  setting,
+  onDone,
+  disabled,
+}: {
+  game: GameId;
+  setting: ErssSetting;
+  onDone: () => Promise<void>;
+  disabled: boolean;
+}) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const [draft, setDraft] = useState(setting.value);
+
+  const write = async (value: string) => {
+    setBusy(true);
+    try {
+      await api.erssSet(game, setting.key, value);
+      await onDone();
+    } catch (error) {
+      toast.error("Could not set", error instanceof Error ? error.message : String(error));
+      setDraft(setting.value);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const off = disabled || busy;
+
+  return (
+    <div className="between" title={setting.detail}>
+      <span className="w3" style={{ fontSize: "var(--t-sm)" }}>
+        {setting.title}
+      </span>
+
+      {setting.kind === "bool" && (
+        <button
+          type="button"
+          className="codex__filter"
+          data-on={setting.value === "true"}
+          disabled={off}
+          onClick={() => void write(setting.value === "true" ? "false" : "true")}
+        >
+          {setting.value === "true" ? "on" : "off"}
+        </button>
+      )}
+
+      {setting.kind !== "bool" && setting.choices.length > 0 && (
+        <span className="row" style={{ gap: "var(--s2)", flexWrap: "wrap", justifyContent: "flex-end" }}>
+          {setting.choices.map((choice) => (
+            <button
+              key={choice.value}
+              type="button"
+              className="codex__filter"
+              data-on={setting.value === choice.value}
+              disabled={off}
+              onClick={() => void write(choice.value)}
+            >
+              {choice.label}
+            </button>
+          ))}
+        </span>
+      )}
+
+      {setting.kind !== "bool" && setting.choices.length === 0 && (
+        <input
+          className="in"
+          style={{ width: 120, textAlign: "right" }}
+          value={draft}
+          disabled={off}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={() => draft !== setting.value && void write(draft)}
+          onKeyDown={(event) => event.key === "Enter" && void write(draft)}
+        />
+      )}
+    </div>
   );
 }

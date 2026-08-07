@@ -38,6 +38,18 @@ const CORE: &str = "ERSS-FG.dll";
 /// anybody reading the folder.
 const RESHADE_STUB: &str = "ERSSReShadeStub.addon";
 
+/// The password the author publishes beside the download.
+///
+/// Some releases go out AES-encrypted and the post that links them prints the
+/// password two lines further down — it is there to stop reuploaders and
+/// scanners, not the person who just downloaded the file. Trying it first is
+/// what that person would do; the field is still there when a release changes
+/// it.
+const PUBLISHED_PASSWORD: &str = "huutaiii";
+
+/// Executable versions the mod loads against: game 1.16, 1.14 and 1.13.
+const SUPPORTED_BUILDS: &[&str] = &["2.6", "2.4", "2.3"];
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ErssStatus {
@@ -50,12 +62,17 @@ pub struct ErssStatus {
     pub frame_time_addon: bool,
     /// Archives found on this machine, newest first.
     pub archives: Vec<PathBuf>,
+    /// The one that will be installed: the newest release found.
+    pub release: Option<PathBuf>,
     /// True when the game folder has ReShade, so the stub is wanted.
     pub reshade: bool,
-    /// True when the release archive is locked and a password has to be typed in.
-    pub needs_password: bool,
+    /// True when that release is encrypted. The published password is tried
+    /// automatically, so this is a note rather than a demand.
+    pub locked: bool,
     /// Reasons the mod will not work until they are dealt with.
     pub blockers: Vec<String>,
+    /// Its own settings, once it has run once and written them.
+    pub settings: Vec<Setting>,
 }
 
 /// Pulls `4.14.1` out of `ERSS-FG-v4.14.1-Release.7z`.
@@ -146,9 +163,16 @@ pub fn find_archives() -> Vec<PathBuf> {
     found.into_iter().map(|(_, path)| path).collect()
 }
 
-/// The newest archive of each kind, which is what an install actually uses.
-pub fn best_of_each(archives: &[PathBuf]) -> Vec<(Kind, PathBuf)> {
-    let mut out: Vec<(Kind, PathBuf)> = Vec::new();
+/// Every archive of each kind, newest first, as things to try in order.
+///
+/// A list rather than one choice, because whether an archive is any use cannot
+/// be told by looking at it. Releases are usually published in the clear, but
+/// some go out with every file inside AES-encrypted — 4.14.1 did — and a
+/// half-finished download looks exactly like a good one until it is unpacked.
+/// Predicting which is which means being wrong quietly; trying the newest and
+/// falling back means being right.
+pub fn candidates(archives: &[PathBuf]) -> Vec<(Kind, Vec<PathBuf>)> {
+    let mut out: Vec<(Kind, Vec<PathBuf>)> = Vec::new();
     for path in archives {
         let Some(name) = path.file_name().map(|n| n.to_string_lossy().to_string()) else {
             continue;
@@ -156,13 +180,21 @@ pub fn best_of_each(archives: &[PathBuf]) -> Vec<(Kind, PathBuf)> {
         let Some(kind) = kind_of(&name) else {
             continue;
         };
-        // `find_archives` already sorted newest first, so the first of a kind
-        // wins and the rest are older releases kept around.
-        if !out.iter().any(|(seen, _)| *seen == kind) {
-            out.push((kind, path.clone()));
+        // `find_archives` already sorted newest first, so pushing keeps that.
+        match out.iter_mut().find(|(seen, _)| *seen == kind) {
+            Some((_, paths)) => paths.push(path.clone()),
+            None => out.push((kind, vec![path.clone()])),
         }
     }
     out
+}
+
+/// The one that will be installed, which is simply the newest of its kind.
+pub fn chosen(archives: &[PathBuf], kind: Kind) -> Option<PathBuf> {
+    candidates(archives)
+        .into_iter()
+        .find(|(seen, _)| *seen == kind)
+        .and_then(|(_, paths)| paths.into_iter().next())
 }
 
 /// True when ReShade is installed in the game folder.
@@ -170,6 +202,94 @@ fn has_reshade(game_dir: &Path) -> bool {
     ["ReShade.ini", "reshade-shaders", "ReShade64.dll"]
         .iter()
         .any(|name| game_dir.join(name).exists())
+}
+
+/// Everything the mod's own instructions insist on, checked before it is blamed.
+///
+/// Each of these is in the author's post as a prerequisite or a known issue, and
+/// each of them produces a symptom that looks like something else: no overlay,
+/// tearing, a crash on minimise, a game that will not start. Reading them off
+/// the machine beats reading them off a page.
+pub fn preflight(
+    game_dir: &Path,
+    build: Option<&str>,
+    has_eac: bool,
+    eac_bypassed: bool,
+    hags: bool,
+    screen_mode: Option<&str>,
+    game_res: Option<(u32, u32)>,
+    display_res: Option<(u32, u32)>,
+) -> Vec<String> {
+    let mut notes = Vec::new();
+
+    if has_eac && !eac_bypassed {
+        notes.push(
+            "The anti-cheat has to be off — the mod cannot load past it, and online play \
+             with it loaded is a ban."
+                .to_string(),
+        );
+    }
+
+    // "Expect screen tearing and stutters while using framegen with HwSch
+    // disabled" — the author's words, and it is a prerequisite not a suggestion.
+    if !hags {
+        notes.push(
+            "Hardware-accelerated GPU scheduling is off. Frame generation tears and \
+             stutters without it. Optimise turns it on; Windows needs a restart after."
+                .to_string(),
+        );
+    }
+
+    // "Requires ELDEN RING version 1.16, 1.14 or 1.13", in the author's words.
+    // The executable reports the internal number rather than the one on the
+    // patch notes, and the two run six apart — 1.16.1 is file version 2.6.1.0,
+    // verified on this machine. So the three supported releases are 2.6, 2.4 and
+    // 2.3, and anything else is worth saying before the mod is blamed.
+    if let Some(build) = build {
+        if !SUPPORTED_BUILDS.iter().any(|ok| build.starts_with(ok)) {
+            notes.push(format!(
+                "This mod supports ELDEN RING 1.16, 1.14 and 1.13, and this copy reports \
+                 build {build}. It will most likely refuse to load."
+            ));
+        }
+    }
+
+    // "Set Resolution in the game's Graphics menu to your target resolution" —
+    // upscaling from a resolution below the desktop is upscaling twice.
+    if let (Some((gw, gh)), Some((dw, dh))) = (game_res, display_res) {
+        if gw != dw || gh != dh {
+            notes.push(format!(
+                "The game renders at {gw}x{gh} and your screen is {dw}x{dh}. Set the \
+                 game to your screen's resolution or the upscaler works from the wrong \
+                 size — Optimise does this."
+            ));
+        }
+    }
+
+    // "Minimizing while FSR-FG is enabled crashes the game", and in full screen
+    // "the game will repeatedly try to enter exclusive full-screen mode causing
+    // screen flashes". Borderless is the answer to both, and to HDR.
+    if screen_mode.is_some_and(|mode| mode.eq_ignore_ascii_case("FULLSCREEN")) {
+        notes.push(
+            "The game is in exclusive fullscreen. The mod's overlay can be invisible \
+             there, HDR will not work, and FSR frame generation flashes. Borderless \
+             fixes all three."
+                .to_string(),
+        );
+    }
+
+    // The loader stands in for D3D12, and so does every other mod loader.
+    for rival in ["dinput8.dll", "SpecialK64.dll", "modengine2", "me3"] {
+        if game_dir.join(rival).exists() {
+            notes.push(format!(
+                "{rival} is in the game folder. Two loaders both standing in for D3D12 \
+                 is the usual reason neither loads — the mod's post covers the order \
+                 they need."
+            ));
+        }
+    }
+
+    notes
 }
 
 /// What is in the folder now.
@@ -201,24 +321,29 @@ pub fn status(game_dir: &Path, has_eac: bool, eac_bypassed: bool, hags: bool) ->
     }
 
     let archives = find_archives();
-    let needs_password = best_of_each(&archives)
-        .iter()
-        .filter(|(kind, _)| *kind == Kind::Main)
-        .any(|(_, path)| is_locked(path));
+    let release = chosen(&archives, Kind::Main);
+    // Encrypted, which is not the same as needing anything typed — the password
+    // the author publishes is tried on its own, and proving here that it works
+    // would mean decompressing seventy megabytes on every refresh. So this says
+    // the release is locked and the field stays an override for the day a
+    // release changes it.
+    let locked = release.as_deref().is_some_and(is_locked);
 
     ErssStatus {
         installed,
         loader,
         version,
+        release,
         frame_time_addon: game_dir
             .join("ERSS2")
             .join("addons")
             .join("RemoveFrameTimeConstraint.dll")
             .is_file(),
         reshade: has_reshade(game_dir),
-        needs_password,
+        locked,
         archives,
         blockers,
+        settings: settings(game_dir),
     }
 }
 
@@ -270,8 +395,8 @@ pub fn install(
         return Err(Error::msg("the game folder is not there".to_string()));
     }
 
-    let chosen = best_of_each(archives);
-    if !chosen.iter().any(|(kind, _)| *kind == Kind::Main) {
+    let wanted = candidates(archives);
+    if !wanted.iter().any(|(kind, _)| *kind == Kind::Main) {
         return Err(Error::msg(
             "no ERSS release archive found. Download one and it will be picked up here."
                 .to_string(),
@@ -295,43 +420,56 @@ pub fn install(
     let mut done = Vec::new();
     let mut version = None;
 
-    for (kind, archive) in &chosen {
-        let name = archive
-            .file_name()
-            .map_or_else(String::new, |n| n.to_string_lossy().to_string());
+    for (kind, releases) in &wanted {
+        // The alternative-toggle download is not files, it is three settings —
+        // and it puts its `ERSS-FG.toml` in the game root, where the mod does
+        // not look, contradicting the real one in `ERSS2` for anybody who later
+        // goes reading. Roundtable writes those same settings itself and they
+        // are editable in the launcher, so the archive is left where it is.
+        if *kind == Kind::Overlay {
+            continue;
+        }
         let into = staging.join(match kind {
             Kind::Main => "main",
             Kind::FrameTime => "addon",
             Kind::Overlay => "overlay",
         });
-        std::fs::create_dir_all(&into).at(&into)?;
 
-        if name.to_ascii_lowercase().ends_with(".zip") {
-            unzip(archive, &into)?;
-        } else {
-            // The releases are locked: every file inside is AES-encrypted and the
-            // password comes with the post they were downloaded from. Nothing
-            // here stores it — it is used for this unpack and then gone.
-            let result = match password {
-                Some(password) => sevenz_rust2::decompress_file_with_password(
-                    archive,
-                    &into,
-                    sevenz_rust2::Password::from(password),
-                ),
-                None => sevenz_rust2::decompress_file(archive, &into),
-            };
-            result.map_err(|error| match error {
-                sevenz_rust2::Error::PasswordRequired => Error::msg(
-                    "This release is locked. Paste the password from the post you \
-                     downloaded it from."
-                        .to_string(),
-                ),
-                sevenz_rust2::Error::MaybeBadPassword(_) => {
-                    Error::msg("That password did not open the archive.".to_string())
+        // Newest first, and down the list until one comes out whole. A locked
+        // release, a download that stopped halfway, a file half-eaten by a
+        // scanner — all of them fail here and none of them should be the end of
+        // it while an older release sits in the same folder.
+        let mut last: Option<Error> = None;
+        let mut opened = None;
+        for archive in releases {
+            let name = archive
+                .file_name()
+                .map_or_else(String::new, |n| n.to_string_lossy().to_string());
+            std::fs::remove_dir_all(&into).ok();
+            std::fs::create_dir_all(&into).at(&into)?;
+
+            match unpack(archive, &into, password) {
+                Ok(()) => {
+                    opened = Some(name);
+                    break;
                 }
-                other => Error::Archive(other.to_string()),
-            })?;
+                Err(error) => last = Some(error),
+            }
         }
+
+        let Some(name) = opened else {
+            // The addon and the overlay config are extras; only the mod itself
+            // failing is worth stopping for. The half-written folder goes either
+            // way so nothing from it reaches the game.
+            std::fs::remove_dir_all(&into).ok();
+            if *kind == Kind::Main {
+                std::fs::remove_dir_all(&staging).ok();
+                return Err(last.unwrap_or_else(|| {
+                    Error::msg("no ERSS release archive could be opened".to_string())
+                }));
+            }
+            continue;
+        };
 
         if *kind == Kind::Main {
             version = version_of(&name);
@@ -341,12 +479,11 @@ pub fn install(
 
     let reshade = has_reshade(game_dir);
     let mut written: Vec<String> = Vec::new();
+    // Kept apart from the report lines so the read-back below has real paths to
+    // check rather than sentences.
+    let mut files: Vec<PathBuf> = Vec::new();
 
-    for source in [
-        staging.join("main"),
-        staging.join("addon"),
-        staging.join("overlay"),
-    ] {
+    for source in [staging.join("main"), staging.join("addon")] {
         if !source.is_dir() {
             continue;
         }
@@ -395,7 +532,16 @@ pub fn install(
                     .to_string_lossy()
                     .to_string(),
             );
+            files.push(target);
         }
+    }
+
+    // A config in the game root is inert — the mod reads the one in `ERSS2` —
+    // and two files of the same name saying different things is worse than one
+    // saying nothing. Earlier versions of Roundtable put one here.
+    let stray = game_dir.join("ERSS-FG.toml");
+    if stray.is_file() {
+        std::fs::remove_file(&stray).ok();
     }
 
     // Both loader names at once means the game loads one and the other sits
@@ -419,6 +565,25 @@ pub fn install(
 
     std::fs::remove_dir_all(&staging).ok();
 
+    // Written is not the same as still there.
+    //
+    // The author warns that Defender takes these for malware, and a real-time
+    // scanner deletes a file seconds after it lands. Reporting a successful
+    // install and leaving the player to find out at the title screen is the
+    // worst of both, so every file this install copied is read back — the files
+    // themselves rather than a list of names, which would go stale the first
+    // time a release drops one.
+    let missing: Vec<String> = files
+        .iter()
+        .filter(|path| !path.is_file())
+        .map(|path| {
+            path.strip_prefix(game_dir)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .to_string()
+        })
+        .collect();
+
     let mut report = vec![format!(
         "ERSS {} installed from {}",
         version.as_deref().unwrap_or("(unknown version)"),
@@ -428,6 +593,18 @@ pub fn install(
     if !reshade {
         report.push("ReShade stub skipped — no ReShade here".into());
     }
+    if seed(game_dir).unwrap_or(false) {
+        report.push("settings started, so they can be changed before the first launch".into());
+    }
+
+    if !missing.is_empty() {
+        return Err(Error::msg(format!(
+            "{} went missing right after being written — Defender takes these for \
+             malware. Exclude the game folder in Windows Security and install again.",
+            missing.join(", ")
+        )));
+    }
+
     Ok(report)
 }
 
@@ -460,6 +637,546 @@ pub fn uninstall(game_dir: &Path) -> Result<Vec<String>> {
         return Err(Error::msg("ERSS is not installed here".to_string()));
     }
     Ok(removed)
+}
+
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+
+/// Where the mod keeps its settings, once it has run once.
+fn config_path(game_dir: &Path) -> PathBuf {
+    game_dir.join("ERSS2").join("ERSS-FG.toml")
+}
+
+/// A setting Roundtable knows how to describe.
+///
+/// The mod writes this file itself and the set of keys grows with each release,
+/// so nothing here is a schema — the file is read as it is found, and these only
+/// supply a readable name, a control and an explanation. An unrecognised key is
+/// still shown and still editable, because a launcher that silently hides half a
+/// config is worse than no launcher.
+///
+/// Two ways of matching, and the difference matters. `key` is an exact name that
+/// has been read out of a real config; `like` is a set of lowercase fragments for
+/// features the author documents but whose key spelling nobody outside has seen.
+/// The mod's own DLL is packed — every string in it is encrypted until it runs —
+/// so there is no way to read the names off the file, and inventing them would
+/// only mean a launcher confidently mislabelling somebody's settings.
+struct Known {
+    /// Exact, and only when it has been seen in a config that the mod wrote.
+    key: &'static str,
+    /// Lowercase fragments, when only the feature is documented and not its name.
+    like: &'static [&'static str],
+    title: &'static str,
+    detail: &'static str,
+    /// Value and label, for the settings that are one of a set.
+    choices: &'static [(&'static str, &'static str)],
+}
+
+/// DLSS quality, as the raw NVIDIA NGX value the mod stores.
+///
+/// Not a string: the mod writes the `NVSDK_NGX_PerfQuality_Value` enum straight
+/// out, so 0 is Performance and 2 is Quality — which reads backwards to anybody
+/// editing the file by hand, and is the whole reason it is a set of buttons here.
+/// 4 is in the enum as Ultra Quality and has never shipped in a driver, so it is
+/// not offered.
+const DLSS_MODES: &[(&str, &str)] = &[
+    ("5", "DLAA"),
+    ("2", "Quality"),
+    ("1", "Balanced"),
+    ("0", "Performance"),
+    ("3", "Ultra performance"),
+];
+
+const KNOWN: &[Known] = &[
+    Known {
+        key: "",
+        like: &["framegen", "frame_gen", "framegeneration"],
+        title: "Frame generation",
+        detail: "Inserts generated frames between the real ones. It needs a steady base \
+                 rate to look right and hardware GPU scheduling to start at all, and \
+                 turning it on takes a restart.",
+        choices: &[],
+    },
+    Known {
+        key: "",
+        like: &["upscal", "superres", "super_res", "supersampl"],
+        title: "Upscaler",
+        detail: "Renders below your resolution and reconstructs. DLSS is the one to pick \
+                 on an NVIDIA card; FSR and XeSS run anywhere.",
+        choices: &[],
+    },
+    Known {
+        key: "DLSSMode",
+        like: &[],
+        title: "DLSS quality",
+        detail: "How far below your resolution it renders. DLAA does not scale down at \
+                 all — no speed, the best picture, and no upscaling artefacts to argue \
+                 about.",
+        choices: DLSS_MODES,
+    },
+    Known {
+        key: "",
+        like: &["preset"],
+        title: "DLSS model",
+        detail: "J and K are the transformer models: they hold thin geometry and moving \
+                 detail together where the older ones smear it. The mod defaults to the \
+                 old convolutional model, so this is worth changing.",
+        choices: &[],
+    },
+    Known {
+        key: "",
+        like: &["sharp"],
+        title: "Sharpening",
+        detail: "Applied after upscaling. Low or none — past halfway it draws a bright \
+                 outline around everything, which is an artefact of its own.",
+        choices: &[],
+    },
+    Known {
+        key: "",
+        like: &["giglitch", "glitchmitigation", "gimitigation"],
+        title: "Global illumination fix",
+        detail: "The lighting flickers in shaded areas with this mod loaded. This is the \
+                 author's own workaround and it belongs on.",
+        choices: &[],
+    },
+    Known {
+        key: "",
+        like: &["fpslimit", "framelimit", "framerate", "fpscap", "targetfps"],
+        title: "Frame limit",
+        detail: "Counted in finished frames, so with frame generation on a limit of 60 \
+                 means 60 on screen and 30 rendered. The mod ships this at 60, which is \
+                 the reason frame generation appears to do nothing until it is raised.",
+        choices: &[],
+    },
+    Known {
+        key: "",
+        like: &["reflex", "antilag", "anti_lag", "lowlatency"],
+        title: "Latency reduction",
+        detail: "Reflex on NVIDIA, Anti-Lag 2 on AMD. Frame generation adds a frame of \
+                 delay and this is what takes it back off.",
+        choices: &[],
+    },
+    Known {
+        key: "",
+        like: &["hdr"],
+        title: "HDR",
+        detail: "Works in borderless, which is where this game should be anyway. Only \
+                 useful on a display that actually has it.",
+        choices: &[],
+    },
+    Known {
+        key: "",
+        like: &["10bit", "tenbit", "swapchain"],
+        title: "Force 10-bit output",
+        detail: "For displays that support HDR but that the game hands 8 bits anyway. \
+                 Without it the mod's HDR has nothing to write into.",
+        choices: &[],
+    },
+    Known {
+        key: "",
+        like: &["ultrawide", "aspect", "pillarbox"],
+        title: "Ultrawide",
+        detail: "Renders at aspect ratios the game refuses. The pillarbox option covers \
+                 the loading screens, which are drawn at 16:9 regardless.",
+        choices: &[],
+    },
+    Known {
+        key: "",
+        like: &["whitebackground", "flashbang", "splash"],
+        title: "Skip the white flash",
+        detail: "The white screen the game opens with.",
+        choices: &[],
+    },
+    Known {
+        key: "OverlayToggleKey",
+        like: &[],
+        title: "Settings key",
+        detail: "Opens the mod's own overlay in game — Home unless it is changed here. \
+                 Not Roundtable's, which is Shift F1.",
+        choices: &[],
+    },
+    Known {
+        key: "ImGuiUseGamepadNav",
+        like: &[],
+        title: "Gamepad navigation",
+        detail: "Lets a controller move through the mod's settings.",
+        choices: &[],
+    },
+    Known {
+        key: "ImGuiUseGamepadToggle",
+        like: &[],
+        title: "Open with both sticks",
+        detail: "Clicking both thumbsticks opens the mod's overlay, for anyone playing \
+                 without a keyboard in reach.",
+        choices: &[],
+    },
+];
+
+/// Where a key sits in the table above, by exact name first and by shape second.
+///
+/// An index rather than a reference: `KNOWN` is a const, so every mention of it
+/// is its own copy of the array and two references into it are not comparable.
+/// The position is also what orders the pane, so one lookup answers both.
+fn described(key: &str) -> Option<usize> {
+    if let Some(exact) = KNOWN
+        .iter()
+        .position(|k| !k.key.is_empty() && k.key == key)
+    {
+        return Some(exact);
+    }
+    // Punctuation out, so `Frame_Generation` and `FrameGeneration` both match.
+    let flat: String = key
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .map(|c| c.to_ascii_lowercase())
+        .collect();
+    KNOWN
+        .iter()
+        .position(|k| k.like.iter().any(|fragment| flat.contains(fragment)))
+}
+
+/// The description for a key, when there is one.
+fn describe(key: &str) -> Option<&'static Known> {
+    described(key).map(|index| &KNOWN[index])
+}
+
+/// One value a setting can take, and what to call it.
+///
+/// Separate from the value because the mod stores enums as bare numbers — `2` is
+/// DLSS Quality — and a launcher that shows the number has saved nobody anything.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Choice {
+    pub value: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Setting {
+    pub key: String,
+    pub title: String,
+    pub detail: String,
+    /// The value as TOML holds it: `true`, `0.5`, `"DLSS"`.
+    pub value: String,
+    /// `bool`, `number` or `text`, so the interface knows what to draw.
+    pub kind: String,
+    pub choices: Vec<Choice>,
+    /// False when Roundtable has nothing to say about this key beyond its name.
+    pub described: bool,
+}
+
+/// Reads the mod's settings, whatever they turn out to be.
+pub fn settings(game_dir: &Path) -> Vec<Setting> {
+    let Ok(text) = std::fs::read_to_string(config_path(game_dir)) else {
+        return Vec::new();
+    };
+    let Ok(doc) = text.parse::<toml_edit::DocumentMut>() else {
+        return Vec::new();
+    };
+
+    let mut out = Vec::new();
+    for (key, item) in doc.as_table().iter() {
+        let Some(value) = item.as_value() else {
+            continue;
+        };
+        let known = describe(key);
+        let kind = if value.is_bool() {
+            "bool"
+        } else if value.is_integer() || value.is_float() {
+            "number"
+        } else {
+            "text"
+        };
+
+        out.push(Setting {
+            key: key.to_string(),
+            title: known.map_or_else(|| spaced(key), |k| k.title.to_string()),
+            detail: known.map_or_else(String::new, |k| k.detail.to_string()),
+            value: value.to_string().trim().trim_matches('"').to_string(),
+            kind: kind.to_string(),
+            choices: known
+                .map(|k| {
+                    k.choices
+                        .iter()
+                        .map(|(value, label)| Choice {
+                            value: (*value).to_string(),
+                            label: (*label).to_string(),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            described: known.is_some(),
+        });
+    }
+
+    // Described settings first and in the order they are listed above, which is
+    // the order somebody would change them in. The rest keep the file's order.
+    out.sort_by_key(|s| described(&s.key).unwrap_or(usize::MAX));
+    out
+}
+
+/// Writes the settings that can be chosen before the game has ever run.
+///
+/// The mod generates its own config the first time it loads, which would leave
+/// the whole of this pane empty until then — and the one thing somebody wants to
+/// set before a first launch is the key that opens it. The author's own optional
+/// download is a three-line `ERSS-FG.toml` meant to be dropped in ahead of the
+/// mod, which is the proof that a partial file is read and filled in rather than
+/// rejected. So only the keys read out of a config the mod itself wrote go in
+/// here; every other setting appears after the first run, named by the mod.
+///
+/// An existing file is never touched — those are the player's choices.
+pub fn seed(game_dir: &Path) -> Result<bool> {
+    let path = config_path(game_dir);
+    if path.exists() {
+        return Ok(false);
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).at(parent)?;
+    }
+    std::fs::write(&path, SEED).at(&path)?;
+    Ok(true)
+}
+
+/// Home to open it, a controller able to as well, and DLSS at quality.
+const SEED: &str = "OverlayToggleKey = \"Home\"\n\
+                    ImGuiUseGamepadNav = true\n\
+                    ImGuiUseGamepadToggle = true\n\
+                    DLSSMode = 2\n";
+
+/// `RemoveFramerateLimit` reads better as `Remove framerate limit`.
+fn spaced(key: &str) -> String {
+    let mut out = String::with_capacity(key.len() + 4);
+    for (index, ch) in key.char_indices() {
+        if index > 0 && ch.is_uppercase() {
+            out.push(' ');
+            out.extend(ch.to_lowercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+/// Writes one setting back, leaving the rest of the file exactly as it was.
+///
+/// `toml_edit` rather than a parse-and-serialise round trip: the mod writes this
+/// file too, and handing it back reformatted with its comments stripped is how a
+/// launcher earns a bug report it did not cause.
+pub fn set_setting(game_dir: &Path, key: &str, value: &str) -> Result<String> {
+    let path = config_path(game_dir);
+    let text = std::fs::read_to_string(&path)
+        .map_err(|_| Error::msg("the mod has not written its settings yet — run the game once".to_string()))?;
+
+    let mut doc = text
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| Error::msg(format!("its settings file will not parse: {e}")))?;
+
+    if !doc.as_table().contains_key(key) {
+        return Err(Error::msg(format!("{key} is not one of its settings")));
+    }
+
+    // Typed the way the existing value is typed, so a boolean does not become
+    // the string "true" and get ignored.
+    let existing = doc[key].as_value().cloned();
+    doc[key] = match existing {
+        Some(v) if v.is_bool() => toml_edit::value(matches!(
+            value.to_ascii_lowercase().as_str(),
+            "true" | "1" | "on" | "yes"
+        )),
+        Some(v) if v.is_integer() => toml_edit::value(
+            value
+                .parse::<i64>()
+                .map_err(|_| Error::msg(format!("{key} takes a whole number")))?,
+        ),
+        Some(v) if v.is_float() => toml_edit::value(
+            value
+                .parse::<f64>()
+                .map_err(|_| Error::msg(format!("{key} takes a number")))?,
+        ),
+        _ => toml_edit::value(value),
+    };
+
+    // The original once, so a bad guess is recoverable.
+    let backup = path.with_extension("toml.roundtable-bak");
+    if !backup.exists() {
+        let _ = std::fs::copy(&path, &backup);
+    }
+    std::fs::write(&path, doc.to_string()).at(&path)?;
+    Ok(format!("{key} set to {value}"))
+}
+
+// ---------------------------------------------------------------------------
+// Artefacts
+// ---------------------------------------------------------------------------
+
+/// One thing to change in the game's own config, and the artefact it removes.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Fix {
+    pub key: &'static str,
+    pub value: &'static str,
+    pub why: &'static str,
+}
+
+/// Everything in the game's own config that shows up as an artefact once frames
+/// are being generated.
+///
+/// Frame generation does not invent detail; it interpolates between two frames
+/// it is given. So anything that changes a pixel for reasons the motion vectors
+/// cannot explain — a flickering light, a blur pass, a reflection that only
+/// exists on screen — is guessed at, and the guess is the artefact. Every entry
+/// here is one of those, and the first two come from the author's own list of
+/// known issues rather than from theory.
+pub const ARTEFACT_FIXES: &[Fix] = &[
+    Fix {
+        key: "GIDataQuality",
+        value: "LOW",
+        // The author's own words: "Setting Global Illumination to Low can
+        // reduce the intensity" of the flickering this mod is known for.
+        why: "Flickering light in shaded rooms is this mod's one real artefact, and \
+              turning global illumination down is the author's own workaround for it",
+    },
+    Fix {
+        key: "RaytracingQuality",
+        value: "DISABLE",
+        why: "The same flicker is worst with ray tracing on, and in this game it buys \
+              reflections nobody sees in motion",
+    },
+    Fix {
+        key: "MotionBlur",
+        value: "OFF",
+        why: "Blur drawn along last frame's motion, then interpolated again — it smears \
+              twice and hides the frame rate you just paid for",
+    },
+    Fix {
+        key: "DepthOfField",
+        value: "LOW",
+        why: "A full-screen blur that moves with the camera and not with the geometry, \
+              which is exactly what an interpolator gets wrong",
+    },
+    Fix {
+        key: "ScreenMode",
+        value: "BORDERLESS",
+        why: "In exclusive fullscreen the mod's overlay is invisible, HDR does not work, \
+              and FSR frame generation flashes the screen",
+    },
+    Fix {
+        key: "AutoDetectBestRenderingSettings",
+        value: "OFF",
+        why: "Otherwise the game puts all of this back on the next start",
+    },
+];
+
+/// One of the mod's settings by what it does, whatever the release calls it.
+///
+/// The titles come from the table above and are stable; the keys behind them are
+/// the mod's own and are not. Asking for "Frame limit" and getting whichever key
+/// turned out to spell it is the only way to touch a setting whose name cannot
+/// be known ahead of time.
+pub fn setting_titled(game_dir: &Path, title: &str) -> Option<Setting> {
+    settings(game_dir).into_iter().find(|s| s.title == title)
+}
+
+/// True when one of the mod's settings reads as switched on.
+pub fn switched_on(setting: &Setting) -> bool {
+    let value = setting.value.to_ascii_lowercase();
+    !matches!(value.as_str(), "false" | "0" | "off" | "none" | "disabled" | "")
+}
+
+/// The DLSS quality worth running, in the mod's own numbering.
+///
+/// Upscaling artefacts and frame generation artefacts compound: the generator is
+/// handed a reconstructed frame and interpolates its mistakes. The way to no
+/// artefacts is therefore to scale down as little as the card allows, which is
+/// DLAA — full resolution, no upscale at all — wherever there are frames to
+/// spare, and one step down from there when there are not.
+///
+/// Frame generation is what buys the room to do this. It roughly doubles the
+/// finished rate, so a card that could only hold the panel at Quality can hold it
+/// at DLAA once the generator is carrying half the frames.
+pub fn best_dlss_mode(tier: crate::perf::Tier, pixels: u64, framegen: bool) -> (&'static str, &'static str) {
+    use crate::perf::Tier;
+
+    // Four megapixels is 1440p. Past it the reconstruction is doing real work.
+    let heavy = pixels >= 3_500_000;
+    let very_heavy = pixels >= 7_000_000; // 4K and up.
+
+    match (tier, very_heavy, heavy) {
+        // Nothing to reconstruct from, so take the frames.
+        (Tier::Weak, _, _) => ("0", "Performance"),
+        (Tier::Modest, true, _) => ("0", "Performance"),
+        (Tier::Modest, _, true) => ("1", "Balanced"),
+        (Tier::Modest, _, _) if framegen => ("2", "Quality"),
+        (Tier::Modest, _, _) => ("2", "Quality"),
+        (Tier::Strong, true, _) => ("1", "Balanced"),
+        (Tier::Strong, _, true) if framegen => ("5", "DLAA"),
+        (Tier::Strong, _, true) => ("2", "Quality"),
+        (Tier::Strong, _, _) => ("5", "DLAA"),
+        (Tier::Ample, true, _) if framegen => ("5", "DLAA"),
+        (Tier::Ample, true, _) => ("2", "Quality"),
+        (Tier::Ample, _, _) => ("5", "DLAA"),
+    }
+}
+
+/// Roundtable's own frame-cap patch has to stand down while this is installed.
+///
+/// Since v4.7.0 the mod removes the sixty cap unconditionally — the author took
+/// the option away and shipped the changelog line "fixed a conflict with other
+/// FPS unlocking mods" in the same release. Two things rewriting the same value
+/// in a running process is not a race that resolves; it is the tearing and the
+/// uneven pointer that gets blamed on the monitor.
+pub fn owns_the_frame_cap(game_dir: &Path) -> bool {
+    game_dir.join(CORE).is_file()
+}
+
+/// Opens one archive, whatever it is locked with.
+///
+/// A typed password first, then the one the author prints beside the download.
+/// Neither is stored — used for this unpack and then gone.
+fn unpack(archive: &Path, into: &Path, password: Option<&str>) -> Result<()> {
+    let name = archive
+        .file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().to_ascii_lowercase());
+    if name.ends_with(".zip") {
+        return unzip(archive, into);
+    }
+
+    let mut result = match password {
+        Some(password) => sevenz_rust2::decompress_file_with_password(
+            archive,
+            into,
+            sevenz_rust2::Password::from(password),
+        ),
+        None => sevenz_rust2::decompress_file(archive, into),
+    };
+
+    if matches!(
+        result,
+        Err(sevenz_rust2::Error::PasswordRequired | sevenz_rust2::Error::MaybeBadPassword(_))
+    ) && password != Some(PUBLISHED_PASSWORD)
+    {
+        std::fs::remove_dir_all(into).ok();
+        std::fs::create_dir_all(into).at(into)?;
+        result = sevenz_rust2::decompress_file_with_password(
+            archive,
+            into,
+            sevenz_rust2::Password::from(PUBLISHED_PASSWORD),
+        );
+    }
+
+    result.map_err(|error| match error {
+        sevenz_rust2::Error::PasswordRequired => Error::msg(
+            "This release is locked and the usual password did not open it. Paste the \
+             one from the post you downloaded it from."
+                .to_string(),
+        ),
+        sevenz_rust2::Error::MaybeBadPassword(_) => {
+            Error::msg("That password did not open the archive.".to_string())
+        }
+        other => Error::Archive(other.to_string()),
+    })
 }
 
 fn unzip(archive: &Path, destination: &Path) -> Result<()> {
@@ -557,14 +1274,115 @@ mod tests {
         paths.sort_by(|a, b| b.0.cmp(&a.0));
         let sorted: Vec<PathBuf> = paths.into_iter().map(|(_, p)| p).collect();
 
-        let best = best_of_each(&sorted);
-        let main = best.iter().find(|(k, _)| *k == Kind::Main).unwrap();
+        let main = chosen(&sorted, Kind::Main).unwrap();
+        assert!(main.to_string_lossy().contains("4.14.1"), "got {main:?}");
+        assert!(chosen(&sorted, Kind::FrameTime).is_some());
+        assert!(chosen(&sorted, Kind::Overlay).is_none());
+
+        // And the older ones stay behind it, to fall back to.
+        let (_, releases) = candidates(&sorted)
+            .into_iter()
+            .find(|(kind, _)| *kind == Kind::Main)
+            .unwrap();
+        let order: Vec<String> = releases
+            .iter()
+            .map(|p| version_of(&p.file_name().unwrap().to_string_lossy()).unwrap())
+            .collect();
+        assert_eq!(order, ["4.14.1", "4.13.0", "4.12.0"]);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_release_that_will_not_open_falls_back_to_one_that_does() {
+        // Locked, half-downloaded, half-eaten by a scanner — all the same here,
+        // and none of them should be the end of it while an older release sits
+        // in the same folder.
+        let dir = temp("fallback");
+        let game = dir.join("Game");
+        std::fs::create_dir_all(&game).unwrap();
+
+        let broken = dir.join("ERSS-FG-v4.14.1-Release.zip");
+        std::fs::write(&broken, b"this is not an archive").unwrap();
+        let good = dir.join("ERSS-FG-v4.14.0-Release.zip");
+        release(&good, &["D3D12.dll", "ERSS-FG.dll"]);
+
+        let report = install(&game, &[broken.clone(), good], false, None).unwrap();
+        assert!(game.join("ERSS-FG.dll").is_file());
         assert!(
-            main.1.to_string_lossy().contains("4.14.1"),
-            "got {:?}",
-            main.1
+            report[0].contains("4.14.0"),
+            "installed the one that opened: {report:?}"
         );
-        assert!(best.iter().any(|(k, _)| *k == Kind::FrameTime));
+
+        // With nothing to fall back to, it says so instead of half-installing.
+        let empty = dir.join("Game2");
+        std::fs::create_dir_all(&empty).unwrap();
+        assert!(install(&empty, &[broken], false, None).is_err());
+        assert!(!empty.join("ERSS-FG.dll").exists());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_alternative_toggle_download_is_settings_and_not_files() {
+        // Its `ERSS-FG.toml` goes in the game root, which the mod does not read
+        // — leaving two files of that name saying different things.
+        let dir = temp("toggle");
+        let game = dir.join("Game");
+        std::fs::create_dir_all(&game).unwrap();
+
+        let main = dir.join("ERSS-FG-v4.14.1-Release.zip");
+        release(&main, &["D3D12.dll", "ERSS-FG.dll"]);
+        let toggle = dir.join("ERSS-FG-controller-overlay-toggle.zip");
+        release(&toggle, &["ERSS-FG.toml", "README.txt"]);
+
+        let report = install(&game, &[main, toggle], false, None).unwrap();
+        assert!(
+            !game.join("ERSS-FG.toml").exists(),
+            "nothing inert left in the game folder"
+        );
+        assert!(!report.iter().any(|line| line.contains("overlay-toggle")));
+
+        // And the settings it carries are written where the mod does look.
+        let seeded = std::fs::read_to_string(config_path(&game)).unwrap();
+        assert!(seeded.contains("OverlayToggleKey"));
+        assert!(seeded.contains("ImGuiUseGamepadToggle = true"));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_stray_config_from_an_earlier_install_is_cleared() {
+        let dir = temp("stray");
+        let game = dir.join("Game");
+        std::fs::create_dir_all(&game).unwrap();
+        std::fs::write(game.join("ERSS-FG.toml"), "OverlayToggleKey = \"T\"\n").unwrap();
+
+        let main = dir.join("ERSS-FG-v4.14.1-Release.zip");
+        release(&main, &["D3D12.dll", "ERSS-FG.dll"]);
+        install(&game, &[main], false, None).unwrap();
+
+        assert!(!game.join("ERSS-FG.toml").exists());
+        assert!(config_path(&game).is_file(), "and the real one is there");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_broken_addon_does_not_stop_the_mod_going_in() {
+        // The addon and the overlay config are extras.
+        let dir = temp("extra-broken");
+        let game = dir.join("Game");
+        std::fs::create_dir_all(&game).unwrap();
+
+        let main = dir.join("ERSS-FG-v4.14.1-Release.zip");
+        release(&main, &["D3D12.dll", "ERSS-FG.dll"]);
+        let addon = dir.join("ERSS-Addon-RemoveFrameTimeConstraint-v0.1.0-Release.zip");
+        std::fs::write(&addon, b"truncated").unwrap();
+
+        install(&game, &[main, addon], false, None).unwrap();
+        assert!(game.join("ERSS-FG.dll").is_file(), "the mod is in");
+        assert!(!status(&game, true, true, true).frame_time_addon, "the extra is not");
 
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -653,7 +1471,7 @@ mod tests {
         let main = dir.join("ERSS-FG-v4.14.1-Release.zip");
         release(&main, &["D3D12.dll", "ERSS-FG.dll"]);
 
-        install(&game, &[main.clone()], false, None).unwrap();
+        install(&game, std::slice::from_ref(&main), false, None).unwrap();
         assert!(game.join("D3D12.dll").is_file());
 
         install(&game, &[main], true, None).unwrap();
@@ -701,6 +1519,238 @@ mod tests {
         assert!(!game.join("ERSS2").exists());
         assert!(game.join("eldenring.exe").is_file(), "the game is untouched");
         assert!(!status(&game, true, true, true).installed);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_settings_it_writes_are_readable_before_the_game_has_run() {
+        // The mod generates its config on first load, which would leave this
+        // pane empty on a fresh install — and the one setting somebody wants
+        // beforehand is the key that opens it.
+        let dir = temp("seed");
+        let game = dir.join("Game");
+        std::fs::create_dir_all(&game).unwrap();
+
+        assert!(settings(&game).is_empty(), "nothing there yet");
+        assert!(seed(&game).unwrap(), "seeded");
+        assert!(!seed(&game).unwrap(), "and never a second time");
+
+        let found = settings(&game);
+        let key = found.iter().find(|s| s.key == "OverlayToggleKey").unwrap();
+        assert_eq!(key.value, "Home");
+        assert_eq!(key.kind, "text");
+
+        let dlss = found.iter().find(|s| s.key == "DLSSMode").unwrap();
+        assert_eq!(dlss.kind, "number", "the mod stores it as the raw NGX value");
+        assert_eq!(dlss.value, "2");
+        assert_eq!(
+            dlss.choices.iter().find(|c| c.value == "2").map(|c| c.label.as_str()),
+            Some("Quality"),
+            "2 is Quality, which reads backwards without a label"
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_config_the_player_already_has_is_left_alone() {
+        let dir = temp("seed-keeps");
+        let game = dir.join("Game");
+        let folder = game.join("ERSS2");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("ERSS-FG.toml"), "OverlayToggleKey = \"T\"\n").unwrap();
+
+        assert!(!seed(&game).unwrap(), "their choice, not ours");
+        assert_eq!(
+            settings(&game).iter().find(|s| s.key == "OverlayToggleKey").unwrap().value,
+            "T"
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn an_enum_stays_a_number_when_it_is_written_back() {
+        // Quoting it would make the mod ignore the value and fall back.
+        let dir = temp("write-enum");
+        let game = dir.join("Game");
+        std::fs::create_dir_all(&game).unwrap();
+        seed(&game).unwrap();
+
+        set_setting(&game, "DLSSMode", "5").unwrap();
+        let text = std::fs::read_to_string(config_path(&game)).unwrap();
+        assert!(text.contains("DLSSMode = 5"), "got {text}");
+        assert!(!text.contains("\"5\""));
+
+        set_setting(&game, "ImGuiUseGamepadNav", "false").unwrap();
+        assert!(std::fs::read_to_string(config_path(&game))
+            .unwrap()
+            .contains("ImGuiUseGamepadNav = false"));
+
+        // A key the mod does not have is refused rather than invented.
+        assert!(set_setting(&game, "MadeUpSetting", "1").is_err());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_setting_is_described_by_what_it_does_and_not_only_by_its_name() {
+        // The mod's DLL is packed, so the spelling of most of its keys is not
+        // knowable from outside. Matching the shape of the name is what keeps
+        // this right when a release renames one or adds another.
+        assert_eq!(describe("DLSSMode").unwrap().title, "DLSS quality");
+        for spelling in ["FrameGeneration", "frame_generation", "EnableFrameGen"] {
+            assert_eq!(
+                describe(spelling).map(|k| k.title),
+                Some("Frame generation"),
+                "{spelling}"
+            );
+        }
+        assert_eq!(describe("SuperResolution").map(|k| k.title), Some("Upscaler"));
+        assert_eq!(describe("UpscalerType").map(|k| k.title), Some("Upscaler"));
+        assert_eq!(describe("SharpnessAmount").map(|k| k.title), Some("Sharpening"));
+        assert_eq!(describe("FpsLimit").map(|k| k.title), Some("Frame limit"));
+        assert!(describe("GIGlitchMitigation").is_some());
+        assert!(describe("SomethingNobodyHasSeen").is_none());
+    }
+
+    #[test]
+    fn an_unknown_setting_is_still_shown_and_still_editable() {
+        // A launcher that hides half a config is worse than no launcher.
+        let dir = temp("unknown");
+        let game = dir.join("Game");
+        let folder = game.join("ERSS2");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(
+            folder.join("ERSS-FG.toml"),
+            "DLSSMode = 2\nSomeFutureThing = 3\n",
+        )
+        .unwrap();
+
+        let found = settings(&game);
+        let future = found.iter().find(|s| s.key == "SomeFutureThing").unwrap();
+        assert_eq!(future.title, "Some future thing", "spaced out, not hidden");
+        assert!(!future.described);
+        assert!(future.choices.is_empty());
+        // Described ones lead, because they are the ones anybody would change.
+        assert_eq!(found[0].key, "DLSSMode");
+
+        set_setting(&game, "SomeFutureThing", "1").unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_artefact_fixes_are_the_ones_the_author_names() {
+        let at = |key| ARTEFACT_FIXES.iter().find(|f| f.key == key).unwrap().value;
+
+        assert_eq!(at("GIDataQuality"), "LOW", "the author's own workaround");
+        assert_eq!(at("RaytracingQuality"), "DISABLE");
+        assert_eq!(at("MotionBlur"), "OFF");
+        assert_eq!(
+            at("ScreenMode"),
+            "BORDERLESS",
+            "exclusive fullscreen kills the overlay, HDR and FSR frame generation"
+        );
+        assert!(ARTEFACT_FIXES.iter().all(|f| !f.why.is_empty()), "each says why");
+
+        // And the optimiser has to agree with every one of them, or the two
+        // buttons take turns undoing each other.
+        for fix in ARTEFACT_FIXES {
+            assert_eq!(
+                crate::perf::preset_value(crate::perf::Tier::Ample, fix.key),
+                Some(fix.value),
+                "the optimiser disagrees about {} on a strong card",
+                fix.key
+            );
+        }
+    }
+
+    #[test]
+    fn a_setting_reads_as_on_or_off_however_the_mod_spells_it() {
+        let of = |value: &str| Setting {
+            key: "x".into(),
+            title: "x".into(),
+            detail: String::new(),
+            value: value.into(),
+            kind: "text".into(),
+            choices: Vec::new(),
+            described: false,
+        };
+        for off in ["false", "0", "Off", "None", "Disabled", ""] {
+            assert!(!switched_on(&of(off)), "{off}");
+        }
+        for on in ["true", "1", "DLSSG", "FSR3"] {
+            assert!(switched_on(&of(on)), "{on}");
+        }
+    }
+
+    #[test]
+    fn how_far_it_upscales_follows_the_card_and_the_panel() {
+        use crate::perf::Tier;
+        let hd = 1920 * 1080;
+        let qhd = 2560 * 1440;
+        let uhd = 3840 * 2160;
+
+        // Reconstruction artefacts and generated frames compound, so the answer
+        // is to reconstruct as little as the card allows.
+        assert_eq!(best_dlss_mode(Tier::Ample, qhd, true).1, "DLAA");
+        assert_eq!(best_dlss_mode(Tier::Strong, hd, true).1, "DLAA");
+        // Frame generation is what buys the room for DLAA at 1440p.
+        assert_eq!(best_dlss_mode(Tier::Strong, qhd, true).1, "DLAA");
+        assert_eq!(best_dlss_mode(Tier::Strong, qhd, false).1, "Quality");
+        // And at 4K even a strong card has to give something up.
+        assert_eq!(best_dlss_mode(Tier::Strong, uhd, true).1, "Balanced");
+        assert_eq!(best_dlss_mode(Tier::Weak, hd, true).1, "Performance");
+
+        // Every answer is one the mod will accept.
+        for tier in [Tier::Weak, Tier::Modest, Tier::Strong, Tier::Ample] {
+            for pixels in [hd, qhd, uhd] {
+                for framegen in [true, false] {
+                    let (value, _) = best_dlss_mode(tier, pixels, framegen);
+                    assert!(DLSS_MODES.iter().any(|(v, _)| *v == value), "{value}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_mod_owns_the_frame_cap_once_it_is_in() {
+        // Since 4.7.0 it lifts the sixty cap unconditionally, and the author
+        // fixed a conflict with other unlockers in the same release. Roundtable
+        // patching the same value in the live process is the tearing.
+        let dir = temp("cap-owner");
+        let game = dir.join("Game");
+        std::fs::create_dir_all(&game).unwrap();
+        assert!(!owns_the_frame_cap(&game));
+
+        let main = dir.join("ERSS-FG-v4.14.1-Release.zip");
+        release(&main, &["D3D12.dll", "ERSS-FG.dll"]);
+        install(&game, &[main], false, None).unwrap();
+        assert!(owns_the_frame_cap(&game));
+
+        uninstall(&game).unwrap();
+        assert!(!owns_the_frame_cap(&game), "and hands it back");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_game_versions_it_loads_against_are_the_three_the_author_lists() {
+        let dir = temp("builds");
+        let game = dir.join("Game");
+        std::fs::create_dir_all(&game).unwrap();
+        let check = |build: &str| {
+            preflight(&game, Some(build), false, true, true, None, None, None)
+                .iter()
+                .any(|note| note.contains("1.16, 1.14 and 1.13"))
+        };
+
+        // 1.16.1 reports 2.6.1.0, verified against the executable.
+        assert!(!check("2.6.1.0"), "1.16");
+        assert!(!check("2.4.0.0"), "1.14");
+        assert!(!check("2.3.0.0"), "1.13");
+        assert!(check("2.0.0.0"), "1.10 is too old and should be said so");
 
         std::fs::remove_dir_all(&dir).ok();
     }

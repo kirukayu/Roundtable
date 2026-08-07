@@ -392,16 +392,42 @@ export interface TuneStatus {
   competitors: string[];
 }
 
+/**
+ * One value a setting can take.
+ *
+ * Separate from the value itself because the mod stores its enums as bare
+ * numbers — DLSS Quality is written `2` — and showing the number helps nobody.
+ */
+export interface ErssChoice {
+  value: string;
+  label: string;
+}
+
+/** One of the mod's own settings, read out of its TOML. */
+export interface ErssSetting {
+  key: string;
+  title: string;
+  detail: string;
+  value: string;
+  kind: "bool" | "number" | "text";
+  choices: ErssChoice[];
+  /** False when Roundtable knows nothing about this key beyond its name. */
+  described: boolean;
+}
+
 /** DLSS, frame generation and Reflex, added to a game that has none. */
 export interface ErssStatus {
+  settings: ErssSetting[];
   installed: boolean;
   loader: string | null;
   version: string | null;
   frameTimeAddon: boolean;
   archives: string[];
+  /** The one that will be installed: the newest release found. */
+  release: string | null;
   reshade: boolean;
-  /** The release archives are locked; the password comes with the download. */
-  needsPassword: boolean;
+  /** That release is encrypted. The published password is tried on its own. */
+  locked: boolean;
   /** What stops it working until it is dealt with. */
   blockers: string[];
 }

@@ -205,10 +205,23 @@ fn holdable(tier: Tier) -> u32 {
 /// tearing and the jerky camera. 90 into 180 is two refreshes every frame,
 /// exactly, and it is smooth.
 pub fn suggested_cap(refresh_hz: u32, tier: Tier) -> u32 {
+    cap_under(refresh_hz, holdable(tier))
+}
+
+/// The same, for a rate a frame generator is producing.
+///
+/// A generator roughly doubles the finished rate, and a limit set on finished
+/// frames therefore allows twice what the card renders. 180 Hz on a card that
+/// holds 90 is 90 rendered and 180 shown, every frame landing on its refresh —
+/// which is the smoothest this panel goes.
+pub fn suggested_cap_generated(refresh_hz: u32, tier: Tier) -> u32 {
+    cap_under(refresh_hz, holdable(tier) * 2)
+}
+
+fn cap_under(refresh_hz: u32, ceiling: u32) -> u32 {
     if refresh_hz <= 60 {
         return 60;
     }
-    let ceiling = holdable(tier);
     (1..=6)
         .map(|divisor| refresh_hz / divisor)
         .filter(|fps| refresh_hz % fps == 0 && *fps >= 60 && *fps <= ceiling)
@@ -339,15 +352,63 @@ impl Scaled {
     }
 }
 
+/// What the tier is wrong about once frames are being generated.
+///
+/// Both of these scale up with the card, and both of them are worth giving up
+/// the moment an interpolator is in the pipeline — the first because it is the
+/// mod's one known artefact and the author's own workaround is to turn it down,
+/// the second because a full-screen blur that tracks the camera rather than the
+/// geometry is precisely what interpolation gets wrong. Without this the
+/// optimiser and the frame-generation pane would undo one another, which is
+/// worse than either being wrong on its own.
+const GENERATED_FRAMES: &[Tweak] = &[
+    Tweak {
+        key: "GIDataQuality",
+        value: "LOW",
+        reason: "Frame generation flickers the light in shaded rooms, and turning global \
+                 illumination down is the mod author's own workaround",
+    },
+    Tweak {
+        key: "DepthOfField",
+        value: "LOW",
+        reason: "A blur that moves with the camera and not with the geometry, which is \
+                 what an interpolator guesses wrong",
+    },
+];
+
 /// The preset for one machine.
-fn preset(tier: Tier) -> Vec<Tweak> {
+///
+/// `framegen` is whether a frame-generation mod is installed, which changes two
+/// of the answers regardless of how strong the card is.
+fn preset(tier: Tier, framegen: bool) -> Vec<Tweak> {
     let mut out: Vec<Tweak> = ALWAYS.to_vec();
     out.extend(SCALED.iter().map(|row| Tweak {
         key: row.key,
         value: row.at(tier),
         reason: row.reason,
     }));
+
+    if framegen {
+        for override_ in GENERATED_FRAMES {
+            match out.iter_mut().find(|tweak| tweak.key == override_.key) {
+                Some(existing) => *existing = *override_,
+                None => out.push(*override_),
+            }
+        }
+    }
     out
+}
+
+/// What the preset would set one key to, with frame generation in the picture.
+///
+/// Exposed so the frame-generation pane can check the two agree rather than
+/// hope: they write the same file, and a disagreement means whichever button was
+/// pressed last wins.
+pub fn preset_value(tier: Tier, key: &str) -> Option<&'static str> {
+    preset(tier, true)
+        .into_iter()
+        .find(|tweak| tweak.key == key)
+        .map(|tweak| tweak.value)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -582,10 +643,10 @@ fn find_unlocker(roots: &[PathBuf]) -> Option<PathBuf> {
     None
 }
 
-pub fn status(game: Game, roots: &[PathBuf]) -> PerfStatus {
+pub fn status(game: Game, roots: &[PathBuf], framegen: bool) -> PerfStatus {
     let path = config_path(game);
     let machine = machine();
-    let wanted = preset(machine.tier);
+    let wanted = preset(machine.tier, framegen);
     let mut settings = Vec::new();
     let mut exclusive = false;
 
@@ -627,7 +688,7 @@ pub fn status(game: Game, roots: &[PathBuf]) -> PerfStatus {
 }
 
 /// Applies the preset this machine warrants, and reports what it changed.
-pub fn smooth(game: Game) -> Result<Vec<String>> {
+pub fn smooth(game: Game, framegen: bool) -> Result<Vec<String>> {
     let path = config_path(game).ok_or_else(|| {
         Error::msg("No GraphicsConfig.xml yet. Start the game once so it writes one.")
     })?;
@@ -635,7 +696,7 @@ pub fn smooth(game: Game) -> Result<Vec<String>> {
     let (mut text, encoding) = read(&path)?;
     let mut changed = Vec::new();
 
-    for tweak in preset(machine().tier) {
+    for tweak in preset(machine().tier, framegen) {
         let Some(current) = tag_value(&text, tweak.key) else {
             continue;
         };
@@ -711,6 +772,22 @@ pub(crate) fn display_geometry() -> Option<(u32, u32, u32)> {
 #[cfg(not(windows))]
 pub(crate) fn display_geometry() -> Option<(u32, u32, u32)> {
     None
+}
+
+/// What the game itself is set to render at, for the screen mode it is in.
+///
+/// The file keeps a separate size per mode, so reading the wrong pair reports a
+/// mismatch that is not there.
+pub fn game_resolution(game: Game, screen_mode: Option<&str>) -> Option<(u32, u32)> {
+    let (text, _) = read(&config_path(game)?).ok()?;
+    let prefix = match screen_mode.map(str::to_ascii_uppercase).as_deref() {
+        Some("FULLSCREEN") => "FullScreen",
+        Some("WINDOW") => "WindowScreen",
+        _ => "BorderlessScreen",
+    };
+    let width = tag_value(&text, &format!("Resolution-{prefix}Width"))?.parse().ok()?;
+    let height = tag_value(&text, &format!("Resolution-{prefix}Height"))?.parse().ok()?;
+    Some((width, height))
 }
 
 /// The same thing, written the way it reads in the interface.
@@ -911,7 +988,7 @@ mod tests {
     #[test]
     fn the_preset_leads_with_the_setting_that_causes_the_halving() {
         for tier in [Tier::Weak, Tier::Modest, Tier::Strong, Tier::Ample] {
-            let built = preset(tier);
+            let built = preset(tier, false);
             assert_eq!(built[0].key, "ScreenMode");
             assert_eq!(built[0].value, "BORDERLESS");
             assert!(built[0].reason.contains("30"));
@@ -921,7 +998,7 @@ mod tests {
     #[test]
     fn a_setting_already_at_the_target_is_not_suggested() {
         // Ray tracing is off at every tier, and this config already has it off.
-        let built = preset(Tier::Ample);
+        let built = preset(Tier::Ample, false);
         let tweak = built.iter().find(|t| t.key == "RaytracingQuality").unwrap();
         let current = tag_value(CONFIG, "RaytracingQuality").unwrap();
         assert!(current.eq_ignore_ascii_case(tweak.value));
@@ -930,7 +1007,7 @@ mod tests {
     #[test]
     fn the_preset_pins_auto_detect_off() {
         // Otherwise the game rewrites everything the next time it starts.
-        assert!(preset(Tier::Strong)
+        assert!(preset(Tier::Strong, false)
             .iter()
             .any(|t| t.key == "AutoDetectBestRenderingSettings" && t.value == "OFF"));
     }
@@ -938,8 +1015,8 @@ mod tests {
     #[test]
     fn a_strong_card_is_not_dragged_down_to_the_same_preset_as_a_weak_one() {
         // The old fixed preset dropped a 4080 to HIGH for no reason.
-        let weak = preset(Tier::Weak);
-        let ample = preset(Tier::Ample);
+        let weak = preset(Tier::Weak, false);
+        let ample = preset(Tier::Ample, false);
         let shadow = |list: &[Tweak]| {
             list.iter().find(|t| t.key == "ShadowQuality").unwrap().value
         };
@@ -972,7 +1049,7 @@ mod tests {
         // A 3050 with 4 GB cannot hold MAX textures however new it is.
         let tier = tier_for(Some("NVIDIA GeForce RTX 3050"), 4_096, 1920 * 1080);
         assert!(tier <= Tier::Modest, "got {tier:?}");
-        let textures = preset(tier)
+        let textures = preset(tier, false)
             .iter()
             .find(|t| t.key == "TextureQuality")
             .unwrap()

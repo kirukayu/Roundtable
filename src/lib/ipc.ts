@@ -236,6 +236,11 @@ export const api = {
   erssInstall: (game: GameId, steamOverlay: boolean, password?: string) =>
     post<{ changes: string[] }>("/erss", { game, steamOverlay, password: password ?? null }),
   erssUninstall: (game: GameId) => post<string[]>("/erss/uninstall", { game }),
+  /* One of the mod's own settings, changed before the game starts. */
+  erssSet: (game: GameId, key: string, value: string) =>
+    post<string>("/erss/set", { game, key, value }),
+  /* Everything across all three configs that shows up as a generated-frame artefact. */
+  erssTune: (game: GameId) => post<string[]>("/erss/tune", { game }),
 
   /* What language the emulated Steam tells the game to use. */
   language: (game: GameId) => get<LanguageStatus>("/language", { game }),

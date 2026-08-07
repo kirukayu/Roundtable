@@ -240,40 +240,17 @@ pub fn survey(executables: &[PathBuf]) -> Vec<Lever> {
         by_hand: None,
     });
 
-    // Variable refresh, which is the one thing that beats every setting here and
-    // the one thing no program can turn on.
+    // Variable refresh used to be recommended here and is not any more.
     //
-    // A fixed 180 Hz panel shows every frame for one refresh or two, whichever
-    // the frame took — and that uneven cadence is what tearing and a juddering
-    // camera actually are. Variable refresh makes the panel wait for the frame
-    // instead, and then a rate that moves about stops mattering at all. NVIDIA
-    // only enables it by default for monitors it has certified; for the rest it
-    // is a checkbox, and there is no supported way to tick it from outside.
-    if let Some((_, _, hz)) = crate::perf::display_geometry() {
-        if hz > 60 {
-            levers.push(Lever {
-                id: "variable-refresh".into(),
-                title: "Variable refresh (G-Sync / FreeSync)".into(),
-                detail: format!(
-                    "Your screen runs at {hz} Hz on a fixed cadence, so a frame that \
-                     takes a moment too long is shown twice. Variable refresh removes \
-                     that entirely and matters more than every other setting here."
-                ),
-                current: "cannot be read from here".into(),
-                wanted: "on".into(),
-                done: false,
-                needs_reboot: false,
-                needs_admin: false,
-                by_hand: Some(
-                    "NVIDIA Control Panel → Display → Set up G-SYNC → tick Enable for \
-                     windowed and full screen mode, pick this monitor, then Enable \
-                     settings for the selected display model. AMD: Radeon Software → \
-                     Display → FreeSync."
-                        .into(),
-                ),
-            });
-        }
-    }
+    // On paper it is the one thing that beats every setting in this list: a
+    // fixed panel shows each frame for one refresh or two depending on how long
+    // it took, and that uneven cadence is what tearing and a juddering camera
+    // actually are. In practice, on the monitor this was developed against, it
+    // made the pointer stutter under Windows and the screen flicker under
+    // Linux — and no program can turn it on regardless, so all this could ever
+    // be was a paragraph telling somebody to go and try it. A launcher that
+    // repeats advice it cannot act on, for a setting that has already caused
+    // this machine trouble, is just noise in the pane.
 
     // Frame generation, which ELDEN RING has no support for and does not need to.
     //
@@ -343,16 +320,6 @@ pub fn apply(app_data: &Path, executables: &[PathBuf]) -> Result<Vec<String>> {
 
     let mut kept = load_kept(app_data);
     let mut changed = Vec::new();
-
-    // Nothing here can tick the variable-refresh box, and saying it applied
-    // "everything" while quietly skipping the largest one would be a lie.
-    if let Some((_, _, hz)) = crate::perf::display_geometry() {
-        if hz > 60 {
-            changed.push(format!(
-                "Variable refresh is still off or unknown — worth more than all of this on a {hz} Hz screen"
-            ));
-        }
-    }
 
     let mut remember = |slot: String, before: Option<String>| {
         kept.before.entry(slot).or_insert(before);
@@ -604,17 +571,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_lever_nothing_can_set_says_where_to_click() {
-        // Reporting it as done, or leaving it out, are both worse than saying so.
+    fn variable_refresh_is_not_touched_or_recommended() {
+        // It made the pointer stutter on the machine this was built against, and
+        // nothing here can set it anyway — so it is neither written nor pushed.
         let levers = survey(&[]);
-        let Some(vrr) = levers.iter().find(|lever| lever.id == "variable-refresh") else {
-            // Only offered above 60 Hz, and the machine running the tests may not be.
-            return;
-        };
-        assert!(!vrr.done, "it cannot be known to be done");
-        let by_hand = vrr.by_hand.as_ref().expect("it has to say where");
-        assert!(by_hand.contains("G-SYNC"), "got {by_hand}");
-        assert!(by_hand.contains("FreeSync"), "and the other card: {by_hand}");
+        assert!(
+            !levers.iter().any(|lever| lever.id == "variable-refresh"),
+            "advice a launcher cannot act on is noise"
+        );
+        assert!(
+            !levers.iter().any(|lever| lever.wanted.contains("VRROptimize")),
+            "and it is never written either"
+        );
     }
 
     #[test]

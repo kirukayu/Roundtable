@@ -139,19 +139,6 @@ export function TuneCard({ game }: { game: GameId }) {
           </div>
         ))}
 
-      {status.competitors.length > 0 && (
-        <div className="note note--warn" style={{ marginTop: "var(--s4)" }}>
-          <Icon.Warning size={15} />
-          <div>
-            <div className="note__t">Something else is on the graphics card</div>
-            <div className="note__b">
-              {status.competitors.join(". ")}. Roundtable will not close these — a
-              screen share is usually deliberate — but they cost frames while you play.
-            </div>
-          </div>
-        </div>
-      )}
-
       {done.length > 0 && (
         <>
           <hr className="hr" />
