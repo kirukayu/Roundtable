@@ -121,6 +121,17 @@ fn dump_player(process: &roundtable_lib::unlock::win::Process, manager: usize) {
         }
     }
 
+    // Equipment sits past the character block as a run of item ids, which are
+    // large and distinctive where everything around them is small.
+    let wide = process.read(data, 0x800);
+    println!("\n  large ids past +0x100:");
+    for at in (0x100..wide.len() - 4).step_by(4) {
+        let value = u32::from_le_bytes(wide[at..at + 4].try_into().unwrap());
+        if (1_000_000..90_000_000).contains(&value) {
+            println!("    +{at:#05x}  {value}");
+        }
+    }
+
     println!("\n  words, four per line:");
     for row in (0..0x100).step_by(16) {
         let words: Vec<String> = (0..4)
