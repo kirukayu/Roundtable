@@ -73,6 +73,8 @@ pub struct ErssStatus {
     pub blockers: Vec<String>,
     /// Its own settings, once it has run once and written them.
     pub settings: Vec<Setting>,
+    /// What its log says happened the last time the game ran.
+    pub last_launch: Vec<String>,
 }
 
 /// Pulls `4.14.1` out of `ERSS-FG-v4.14.1-Release.7z`.
@@ -344,6 +346,7 @@ pub fn status(game_dir: &Path, has_eac: bool, eac_bypassed: bool, hags: bool) ->
         archives,
         blockers,
         settings: settings(game_dir),
+        last_launch: last_launch(game_dir),
     }
 }
 
@@ -611,6 +614,37 @@ pub fn install(
     Ok(report)
 }
 
+/// What the mod reported doing the last time the game ran.
+///
+/// Its settings say what was asked for; this says what happened. They come
+/// apart often enough to matter — a generator that is set in the config but not
+/// supported by the card is simply not enabled, and the config still says it is.
+pub fn last_launch(game_dir: &Path) -> Vec<String> {
+    let Ok(log) = std::fs::read_to_string(game_dir.join("ERSS2").join("ERSS-FG.log")) else {
+        return Vec::new();
+    };
+
+    let mut said = Vec::new();
+    for line in log.lines() {
+        let Some((_, text)) = line.split_once(" - ") else {
+            continue;
+        };
+        let text = text.trim();
+        let lower = text.to_ascii_lowercase();
+        let worth = lower.starts_with("enabling")
+            || lower.starts_with("adapter:")
+            || lower.contains("is supported")
+            || lower.contains("not supported")
+            || lower.contains("failed")
+            || lower.contains("monitor refresh");
+        if worth && !said.contains(&text.to_string()) {
+            said.push(text.to_string());
+        }
+    }
+    said.truncate(6);
+    said
+}
+
 /// Which of these are not on disk, named the short way.
 fn absent(game_dir: &Path, files: &[PathBuf]) -> Vec<String> {
     files
@@ -712,7 +746,12 @@ const DLSS_MODES: &[(&str, &str)] = &[
 ];
 
 /// Which frame generator, if any.
-const FRAMEGEN: &[(&str, &str)] = &[("0", "Off"), ("1", "DLSS"), ("2", "FSR 3")];
+///
+/// 2 is DLSS, which is not a guess: the player picked DLSS frame generation in
+/// the mod's own overlay, the config came back `FrameGenMode = 2`, and the log
+/// line for that launch reads "Enabling DLSS-G". This table had it the other way
+/// round and the launcher would have named the wrong generator.
+const FRAMEGEN: &[(&str, &str)] = &[("0", "Off"), ("1", "FSR 3"), ("2", "DLSS")];
 
 /// How many frames it makes from each real one.
 const MULTIPLIER: &[(&str, &str)] = &[("1", "×2"), ("2", "×3"), ("3", "×4")];
@@ -838,9 +877,14 @@ const KNOWN: &[Known] = &[
 /// Setting it forward is how the mod itself remembers that the notice has been
 /// seen, which is why this is a date and not a flag.
 const QUIET: &[(&str, &str)] = &[
-    // Nothing on the keyboard is bound to this, so there is no key to press by
-    // accident and nothing to tell anybody about.
-    ("OverlayToggleKey", "None"),
+    // F24 exists in the virtual-key table and on almost no keyboard, so there
+    // is nothing to press by accident.
+    //
+    // "None" was tried first and the mod rejected it: the file came back with
+    // the player's previous key restored, which is what a parse failure looks
+    // like here. A key it can parse and a person cannot reach is the way to do
+    // this.
+    ("OverlayToggleKey", "F24"),
     ("ImGuiUseGamepadToggle", "false"),
     ("ShowMetricsWindow", "false"),
     ("ShowAdvancedSettingsWindow", "false"),
@@ -1831,7 +1875,7 @@ NumGenFrames = 1
         assert!(done.contains(&"DatePopup".to_string()), "the notice: {done:?}");
 
         let text = std::fs::read_to_string(config_path(&game)).unwrap();
-        assert!(text.contains("OverlayToggleKey = \"None\""));
+        assert!(text.contains("OverlayToggleKey = \"F24\""));
         // The date has to stay a date, or the mod cannot read it and shows the
         // notice again.
         assert!(

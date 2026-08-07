@@ -453,6 +453,8 @@ export interface ErssStatus {
   locked: boolean;
   /** What stops it working until it is dealt with. */
   blockers: string[];
+  /** What its own log says happened the last time the game ran. */
+  lastLaunch: string[];
 }
 
 export interface TuneResult {

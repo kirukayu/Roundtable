@@ -352,6 +352,26 @@ export function ErssCard({ game }: { game: GameId }) {
         </>
       )}
 
+      {status.installed && status.lastLaunch.length > 0 && (
+        <>
+          <hr className="hr" />
+          <div className="w3" style={{ fontSize: "var(--t-sm)", marginBottom: "var(--s2)" }}>
+            Last launch
+          </div>
+          <div className="col" style={{ gap: 2 }}>
+            {status.lastLaunch.map((line) => (
+              <div className="mono w4" style={{ fontSize: "var(--t-2xs)" }} key={line}>
+                {line}
+              </div>
+            ))}
+          </div>
+          <p className="w4" style={{ fontSize: "var(--t-2xs)", marginTop: "var(--s2)" }}>
+            What the mod reported doing, from its own log. The settings above say what was
+            asked for; this says what happened.
+          </p>
+        </>
+      )}
+
       {status.installed && status.settings.length === 0 && (
         <p className="w4" style={{ fontSize: "var(--t-xs)", marginTop: "var(--s3)", lineHeight: 1.7 }}>
           Start the game once and everything it can do appears here — the upscaler, frame

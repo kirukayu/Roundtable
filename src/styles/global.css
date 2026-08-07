@@ -2271,6 +2271,15 @@ html.lenis { scroll-behavior: auto !important; }
  * The frame is transparent, so all of this is drawn rather than inherited: the
  * column carries its own ground, its own hairline and its own light.
  */
+/* Nothing behind the column but the game. */
+html.overlay-window,
+html.overlay-window body,
+html.overlay-window #root {
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+}
+
 .ov {
   position: fixed;
   inset: 0;
@@ -2289,13 +2298,12 @@ html.lenis { scroll-behavior: auto !important; }
   min-height: 0;
   overflow: hidden;
   /*
-   * An oval rather than a rectangle with rounded corners. The horizontal radius
-   * is half the width, which is what makes the ends read as caps; the vertical
-   * one is kept shallow so the curve is a shape and not a hole — a true stadium
-   * on a column this tall would eat two hundred pixels at each end and leave
-   * the text sitting in a slot in the middle.
+   * A percentage horizontal radius made an ellipse, and an ellipse on a column
+   * this tall reads as a mistake — the sides bulge and the text sits in a slot.
+   * A large fixed radius is the shape that was wanted: square-cornered nowhere,
+   * round at the ends, straight down the sides.
    */
-  border-radius: 50% / 74px;
+  border-radius: 26px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   /*
    * Charcoal lit from the top, over near-black. The same light the launcher
@@ -2346,7 +2354,7 @@ html.lenis { scroll-behavior: auto !important; }
   align-items: center;
   gap: var(--s3);
   flex: 0 0 auto;
-  padding: 30px var(--s5) var(--s3);
+  padding: var(--s4) var(--s5) var(--s3);
   cursor: grab;
 }
 .ov__grip:active { cursor: grabbing; }
@@ -2503,7 +2511,7 @@ html.lenis { scroll-behavior: auto !important; }
   display: flex;
   align-items: center;
   gap: var(--s2);
-  margin: 0 26px var(--s2);
+  margin: 0 var(--s4) var(--s2);
   padding: 4px 4px 4px var(--s4);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 999px;
@@ -2556,7 +2564,7 @@ html.lenis { scroll-behavior: auto !important; }
   align-items: center;
   justify-content: center;
   gap: var(--s3);
-  padding: 0 var(--s5) 26px;
+  padding: 0 var(--s5) var(--s4);
   color: var(--w4);
   font-size: var(--t-2xs);
   letter-spacing: 0.08em;

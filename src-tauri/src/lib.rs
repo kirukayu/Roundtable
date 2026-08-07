@@ -13,6 +13,7 @@ pub mod game;
 pub mod games;
 pub mod install;
 pub mod language;
+pub mod live;
 pub mod launch;
 pub mod loader;
 pub mod matchup;
@@ -143,6 +144,30 @@ pub fn hide_overlay() {
     });
 }
 
+/// Whether any part of the window is somewhere a person could see it.
+///
+/// A window dragged off the edge, or onto a monitor that has since been
+/// unplugged, opens where it was and looks like it did not open at all.
+fn on_a_screen(window: &tauri::WebviewWindow) -> bool {
+    let Ok(position) = window.outer_position() else {
+        return true;
+    };
+    let Ok(size) = window.outer_size() else {
+        return true;
+    };
+    window.available_monitors().is_ok_and(|monitors| {
+        monitors.iter().any(|monitor| {
+            let at = monitor.position();
+            let span = monitor.size();
+            // A hundred pixels of it, which is enough to take hold of.
+            position.x + 100 < at.x + span.width as i32
+                && position.x + size.width as i32 - 100 > at.x
+                && position.y + 40 < at.y + span.height as i32
+                && position.y + size.height as i32 - 40 > at.y
+        })
+    })
+}
+
 /// Hands the overlay to the window manager to be dragged.
 ///
 /// The page cannot move its own window — there is no Tauri bridge in it — and
@@ -185,7 +210,13 @@ fn show_overlay(app: &tauri::AppHandle) -> Result<(), String> {
     use tauri::Manager;
 
     if let Some(window) = app.get_webview_window(OVERLAY) {
+        // Back on screen if it was dragged off one, and in front whatever was
+        // in front a moment ago.
+        if !on_a_screen(&window) {
+            let _ = window.center();
+        }
         let _ = window.show();
+        let _ = window.set_always_on_top(true);
         let _ = window.set_focus();
         return Ok(());
     }
@@ -232,10 +263,18 @@ fn overlay_hide(app: tauri::AppHandle) {
 }
 
 #[tauri::command]
+/// Shift F1: open it, or put it away if it is already in front of you.
+///
+/// Visible is not the same as in front of you. Pressing the key over a game
+/// shows the window, but the game keeps keyboard focus — so the next press
+/// found it visible and hid it, and from the outside the key looked like it
+/// worked every other time. Hiding needs both.
 fn overlay_toggle(app: tauri::AppHandle) -> Result<(), String> {
     use tauri::Manager;
     match app.get_webview_window(OVERLAY) {
-        Some(window) if window.is_visible().unwrap_or(false) => {
+        Some(window)
+            if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) =>
+        {
             let _ = window.hide();
             Ok(())
         }

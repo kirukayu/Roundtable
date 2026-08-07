@@ -507,6 +507,9 @@ pub struct Player {
     pub mods: Vec<String>,
     /// True when the frame-generation mod is installed.
     pub framegen: bool,
+    /// The character as the running game has them, when it is running. Beats
+    /// the save, which is whatever it was at the last grace.
+    pub live: Option<crate::live::Live>,
 }
 
 async fn run_tool(

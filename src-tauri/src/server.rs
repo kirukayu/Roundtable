@@ -441,8 +441,39 @@ async fn coop_fields() -> Response {
     Json(crate::coop::FIELDS).into_response()
 }
 
+/// Where the co-op settings the game will actually read live.
+///
+/// Not always the game folder. A total conversion carries its own copy of
+/// Seamless Co-op — The Convergence ships `SeamlessCoop\ersc_settings.ini`
+/// inside its own directory — and when the game is launched through the mod,
+/// that is the file loaded. The launcher was writing to the game folder's copy
+/// regardless, so somebody could set a password, watch it appear in an ini, and
+/// still see the old one in game. Which is exactly what happened.
+///
+/// Whichever copy the mod owns wins, because if a mod is installed it is what
+/// is being played.
+fn coop_dir(ctx: &Ctx, game: crate::games::Game) -> crate::error::Result<PathBuf> {
+    let root = ctx
+        .app
+        .settings
+        .lock()
+        .install_for(game)
+        .map(|i| i.root.clone())
+        .ok_or(crate::error::Error::NoGameSelected)?;
+    let install = crate::game::Installation::probe(game, &root)?;
+
+    for spec in crate::edition::for_game(game) {
+        if let Some(found) = resolve(ctx, spec, &install) {
+            if crate::coop::settings_path(&found.root).is_file() {
+                return Ok(found.root);
+            }
+        }
+    }
+    Ok(install.game_dir)
+}
+
 async fn coop_read(State(ctx): State<Ctx>, Query(q): Query<GameQ>) -> Response {
-    match game_dir(&ctx, q.game) {
+    match coop_dir(&ctx, q.game) {
         Ok(dir) => out(crate::coop::read(&dir)),
         Err(error) => out::<()>(Err(error)),
     }
@@ -455,10 +486,38 @@ struct CoopBody {
 }
 
 async fn coop_write(State(ctx): State<Ctx>, Json(body): Json<CoopBody>) -> Response {
-    match game_dir(&ctx, body.game) {
-        Ok(dir) => out(crate::coop::write(&dir, &body.changes)),
-        Err(error) => out::<()>(Err(error)),
+    let Ok(dir) = coop_dir(&ctx, body.game) else {
+        return out::<()>(Err(crate::error::Error::NoGameSelected));
+    };
+    let written = match crate::coop::write(&dir, &body.changes) {
+        Ok(written) => written,
+        Err(error) => return out::<()>(Err(error)),
+    };
+
+    // Every other copy gets the same thing.
+    //
+    // A password that is right in one file and stale in another is worse than
+    // one that is stale in both, because it looks correct wherever you check.
+    // The mod's copy is the one the game reads and is written first; the game
+    // folder's copy is kept in step so switching back to vanilla does not
+    // silently drop you onto an old password.
+    if let Some(root) = ctx.app.settings.lock().install_for(body.game).map(|i| i.root.clone()) {
+        if let Ok(install) = crate::game::Installation::probe(body.game, &root) {
+            let mut also: Vec<PathBuf> = vec![install.game_dir.clone()];
+            for spec in crate::edition::for_game(body.game) {
+                if let Some(found) = resolve(&ctx, spec, &install) {
+                    also.push(found.root);
+                }
+            }
+            for other in also {
+                if other != dir && crate::coop::settings_path(&other).is_file() {
+                    let _ = crate::coop::write(&other, &body.changes);
+                }
+            }
+        }
     }
+
+    out(Ok(written))
 }
 
 async fn coop_password() -> Response {
@@ -1195,6 +1254,13 @@ fn player_state(ctx: &Ctx, edition: Option<&str>) -> crate::ask::Player {
             })
             .collect();
     }
+
+    // What the running game says, which beats the save when there is one.
+    player.live = crate::live::read(game, &player
+        .characters
+        .iter()
+        .map(|(name, level, _)| (name.clone(), *level))
+        .collect::<Vec<_>>());
 
     player
 }

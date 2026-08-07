@@ -68,7 +68,7 @@ pub struct UnlockReport {
 }
 
 /// Turns `"C7 ?? 3C"` into bytes and a mask.
-fn parse(pattern: &str) -> Vec<Option<u8>> {
+pub(crate) fn parse(pattern: &str) -> Vec<Option<u8>> {
     pattern
         .split_whitespace()
         .map(|token| {
@@ -87,7 +87,7 @@ fn parse(pattern: &str) -> Vec<Option<u8>> {
 /// and guessing which hit to patch is how a launcher corrupts somebody's game.
 /// Both of these match exactly once, so a second hit means the build changed and
 /// the right answer is to do nothing.
-fn find_only(haystack: &[u8], pattern: &[Option<u8>]) -> Option<usize> {
+pub(crate) fn find_only(haystack: &[u8], pattern: &[Option<u8>]) -> Option<usize> {
     let Some(first) = pattern.first().copied() else {
         return None;
     };
@@ -118,7 +118,7 @@ fn find_only(haystack: &[u8], pattern: &[Option<u8>]) -> Option<usize> {
 }
 
 #[cfg(windows)]
-mod win {
+pub(crate) mod win {
     use super::{Error, Result};
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
     use windows_sys::Win32::System::Diagnostics::Debug::{

@@ -25,6 +25,11 @@ import "./styles/global.css";
  */
 const isOverlay = window.location.hash.startsWith("#/overlay");
 
+// The overlay's window is transparent; the page inside it was not. `body`
+// carries the app's background, so a black rectangle was painted over the game
+// and the rounded column sat on top of it with its corners showing.
+if (isOverlay) document.documentElement.classList.add("overlay-window");
+
 const root = ReactDOM.createRoot(document.getElementById("root") as HTMLElement);
 
 root.render(
