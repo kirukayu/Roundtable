@@ -143,6 +143,36 @@ pub fn hide_overlay() {
     });
 }
 
+/// Hands the overlay to the window manager to be dragged.
+///
+/// The page cannot move its own window — there is no Tauri bridge in it — and
+/// moving it by posting a new position on every pointer event would be a round
+/// trip per frame and would lag behind the cursor. This is one call: the OS
+/// takes the drag from here and follows the mouse itself, which is why it feels
+/// like moving any other window rather than like dragging something in a page.
+pub fn drag_overlay() {
+    let Some(app) = APP.get() else { return };
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        use tauri::Manager;
+        if let Some(window) = handle.get_webview_window(OVERLAY) {
+            let _ = window.start_dragging();
+        }
+    });
+}
+
+/// Puts the overlay back where it was opened.
+pub fn centre_overlay() {
+    let Some(app) = APP.get() else { return };
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        use tauri::Manager;
+        if let Some(window) = handle.get_webview_window(OVERLAY) {
+            let _ = window.center();
+        }
+    });
+}
+
 /// Shows the overlay, building it the first time it is asked for.
 ///
 /// It is a Tauri window rather than the browser the rest of the interface runs
@@ -172,9 +202,13 @@ fn show_overlay(app: &tauri::AppHandle) -> Result<(), String> {
         .parse()
         .map_err(|_| "could not build the overlay address".to_string())?;
 
+    // Tall and narrow, because that is the shape of the thing inside it: a
+    // standing column with the answer above and the line you type in at the
+    // bottom, where your hands already are. A wide panel across the middle of
+    // the screen covers the fight; a column down one side covers a wall.
     tauri::WebviewWindowBuilder::new(app, OVERLAY, tauri::WebviewUrl::External(parsed))
         .title("Roundtable")
-        .inner_size(660.0, 460.0)
+        .inner_size(400.0, 780.0)
         .decorations(false)
         .transparent(true)
         .always_on_top(true)

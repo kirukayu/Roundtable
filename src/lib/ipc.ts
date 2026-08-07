@@ -35,6 +35,8 @@ import type {
   SteamAccount,
   AskAnswer,
   ErssStatus,
+  AskTurn,
+  AskEvent,
   SystemReport,
   TransferReport,
   TuneResult,
@@ -107,6 +109,53 @@ async function request<T>(
 const get = <T>(path: string, query?: Record<string, string | number | undefined>) =>
   request<T>("GET", path, undefined, query);
 const post = <T>(path: string, payload?: unknown) => request<T>("POST", path, payload);
+
+/**
+ * A response that arrives a line at a time.
+ *
+ * One JSON object per line, handed over as it lands rather than at the end. A
+ * chunk from the network can stop in the middle of a line, so the remainder is
+ * carried forward — reading each chunk as if it were whole loses an event every
+ * few hundred characters and it is never the same one twice.
+ */
+async function* lines(path: string, payload: unknown, signal?: AbortSignal) {
+  const response = await fetch(new URL(BASE + path, window.location.origin), {
+    method: "POST",
+    headers: { "x-roundtable-key": KEY, "content-type": "application/json" },
+    body: JSON.stringify(payload),
+    signal,
+  });
+
+  if (!response.ok || !response.body) {
+    throw new Error(`Request failed: ${response.status}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let held = "";
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      held += decoder.decode(value, { stream: true });
+
+      let cut;
+      while ((cut = held.indexOf("\n")) !== -1) {
+        const line = held.slice(0, cut).trim();
+        held = held.slice(cut + 1);
+        if (!line) continue;
+        try {
+          yield JSON.parse(line) as unknown;
+        } catch {
+          // One malformed line is one lost event, not a failed answer.
+        }
+      }
+    }
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+}
 
 export const api = {
   games: () => get<GameInfo[]>("/games"),
@@ -224,12 +273,28 @@ export const api = {
   /* A question about the game, answered out of the mirrored wiki. */
   ask: (question: string, edition?: string | null) =>
     post<AskAnswer>("/ask", { question, edition: edition ?? null }),
-  /* Which articles a question matches, without asking anything of a model. */
-  askSources: (question: string, edition?: string | null) =>
-    get<string[]>("/ask/sources", { question, edition: edition ?? undefined }),
+  /* The same, reported as it happens: what it is reading, then the answer as
+     the model writes it. `history` is what was said before, so a follow-up can
+     say "her". */
+  askStream: (
+    question: string,
+    options: { edition?: string | null; history?: AskTurn[]; signal?: AbortSignal } = {},
+  ) =>
+    lines(
+      "/ask/stream",
+      {
+        question,
+        edition: options.edition ?? null,
+        history: options.history ?? [],
+      },
+      options.signal,
+    ) as AsyncGenerator<AskEvent>,
   /* The overlay closing itself. It reaches its own window through the server,
      because the page has no Tauri bridge — most of the time it is a browser. */
   overlayHide: () => post<{ ok: boolean }>("/overlay/hide", {}),
+  /* Hands the window to the window manager, which follows the mouse itself. */
+  overlayDrag: () => post<{ ok: boolean }>("/overlay/drag", {}),
+  overlayCentre: () => post<{ ok: boolean }>("/overlay/centre", {}),
 
   /* DLSS, frame generation and Reflex, in a game that ships with none. */
   erss: (game: GameId) => get<ErssStatus>("/erss", { game }),

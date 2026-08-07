@@ -2,37 +2,50 @@ import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "../lib/ipc";
+import type { AskTurn } from "../lib/types";
 
 /**
  * The overlay.
  *
- * A window that sits over the game on a keypress, takes a question, and answers
- * it out of the wiki. It is deliberately one thing: a line to type in, and the
- * answer underneath. Anything else belongs in the launcher, where there is room
- * for it and nobody is waiting to get back to a boss.
+ * A column that stands over the game on a keypress, takes a question at the
+ * bottom and grows the answer upward. Vertical because that is the shape of the
+ * space beside a game: a wide panel across the middle covers the fight, a narrow
+ * one down the side covers a wall. The line you type in is at the bottom, where
+ * a chat window keeps it and where your hands already are.
  *
- * It has to earn its place in a second. So the searching and the thinking are
- * shown as they happen — the articles being read appear while the model is
- * still working, because a wait you can see the shape of is a shorter wait.
+ * It has to earn its place in a second, so nothing waits for anything else. The
+ * articles being read appear while the model is still working, and the answer
+ * arrives a word at a time rather than all at once at the end of a spinner —
+ * the same second and a half, spent very differently.
+ *
+ * It can be moved. The window is handed to the window manager on the first
+ * pointer press, which then follows the mouse itself; dragging it from here,
+ * one position per frame over HTTP, would trail behind the cursor.
  */
 
-type Stage = "idle" | "searching" | "thinking" | "answered" | "failed";
+type Stage = "idle" | "working" | "answering" | "answered" | "failed";
 
-interface Result {
-  answer: string;
-  sources: string[];
+interface Said {
+  /** Whose line it is. */
+  from: "you" | "it";
+  text: string;
+  sources?: string[];
   lane?: string | null;
   ms?: number | null;
 }
 
+/** Kept out of the reply that follows, so the model is not quoting itself. */
+const REMEMBERED = 3;
+
 export function Overlay() {
   const [question, setQuestion] = useState("");
   const [stage, setStage] = useState<Stage>("idle");
-  const [found, setFound] = useState<string[]>([]);
-  const [result, setResult] = useState<Result | null>(null);
-  const [failure, setFailure] = useState("");
+  const [steps, setSteps] = useState<string[]>([]);
+  const [said, setSaid] = useState<Said[]>([]);
+  const sources = useRef<string[]>([]);
   const field = useRef<HTMLInputElement>(null);
-  const asking = useRef(0);
+  const thread = useRef<HTMLDivElement>(null);
+  const asking = useRef<AbortController | null>(null);
 
   // The window is shown and hidden rather than built each time, so focus has to
   // be taken every time it comes back rather than once on mount.
@@ -44,6 +57,7 @@ export function Overlay() {
   }, []);
 
   const dismiss = useCallback(() => {
+    asking.current?.abort();
     void api.overlayHide();
   }, []);
 
@@ -55,113 +69,269 @@ export function Overlay() {
     return () => window.removeEventListener("keydown", onKey);
   }, [dismiss]);
 
+  // The newest line stays in view as the answer grows into it.
+  useEffect(() => {
+    const box = thread.current;
+    if (box) box.scrollTop = box.scrollHeight;
+  }, [said, stage, steps]);
+
+  const busy = stage === "working" || stage === "answering";
+
   const ask = async () => {
     const asked = question.trim();
-    if (!asked || stage === "searching" || stage === "thinking") return;
+    if (!asked || busy) return;
 
-    // A late reply from a question that has been replaced must not overwrite
-    // the answer to the current one.
-    const turn = ++asking.current;
-    setStage("searching");
-    setFound([]);
-    setResult(null);
-    setFailure("");
+    asking.current?.abort();
+    const stop = new AbortController();
+    asking.current = stop;
 
-    // Named first, answered second: the titles come back in milliseconds and
-    // give something true to look at while the model works.
-    void api
-      .askSources(asked)
-      .then((titles) => {
-        if (turn === asking.current) {
-          setFound(titles);
-          setStage((was) => (was === "searching" ? "thinking" : was));
-        }
-      })
-      .catch(() => {});
+    // What has been said already, so "and how do I beat her" has a her. Pairs
+    // only — a question with no answer under it teaches the model nothing.
+    const history: AskTurn[] = [];
+    for (let i = 0; i < said.length - 1; i++) {
+      if (said[i].from === "you" && said[i + 1].from === "it") {
+        history.push({ question: said[i].text, answer: said[i + 1].text });
+      }
+    }
 
+    setQuestion("");
+    setSteps([]);
+    sources.current = [];
+    setStage("working");
+    setSaid((was) => [...was, { from: "you", text: asked }]);
+
+    let answered = false;
     try {
-      const answer = await api.ask(asked);
-      if (turn !== asking.current) return;
-      setResult(answer);
-      setFound(answer.sources);
-      setStage("answered");
+      for await (const event of api.askStream(asked, {
+        history: history.slice(-REMEMBERED),
+        signal: stop.signal,
+      })) {
+        if (stop.signal.aborted) return;
+
+        switch (event.kind) {
+          // What the model chose to do, not a spinner: the search it wrote,
+          // the article it opened. It writes its own searches, so this is the
+          // only honest account of what is happening.
+          case "doing":
+            setSteps((was) => (was.includes(event.note) ? was : [...was, event.note]));
+            break;
+
+          case "sources":
+            sources.current = event.sources;
+            break;
+
+          case "delta":
+            setStage("answering");
+            setSaid((was) => {
+              // The first piece opens a new line; every piece after it grows
+              // the same one.
+              if (answered) {
+                const rest = was.slice(0, -1);
+                const last = was[was.length - 1];
+                return [...rest, { ...last, text: last.text + event.text }];
+              }
+              answered = true;
+              return [...was, { from: "it", text: event.text, sources: sources.current }];
+            });
+            break;
+
+          case "done":
+            setStage("answered");
+            setSaid((was) => {
+              const rest = was.slice(0, -1);
+              const last = was[was.length - 1];
+              if (!last || last.from !== "it") return was;
+              return [...rest, { ...last, lane: event.lane, ms: event.ms }];
+            });
+            break;
+
+          case "failed":
+            setStage("failed");
+            setSaid((was) => [...was, { from: "it", text: event.error }]);
+            break;
+        }
+      }
+      if (!answered && stage !== "failed") setStage("answered");
     } catch (error) {
-      if (turn !== asking.current) return;
-      setFailure(error instanceof Error ? error.message : String(error));
+      if (stop.signal.aborted) return;
       setStage("failed");
+      setSaid((was) => [
+        ...was,
+        { from: "it", text: error instanceof Error ? error.message : String(error) },
+      ]);
     }
   };
 
-  const busy = stage === "searching" || stage === "thinking";
+  const empty = said.length === 0;
 
   return (
-    <div className="ov" onMouseDown={(e) => e.target === e.currentTarget && dismiss()}>
+    <div className="ov">
       <motion.div
-        className="ov__card"
-        initial={{ opacity: 0, y: 14, scale: 0.985 }}
+        className="ov__column"
+        initial={{ opacity: 0, y: 18, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.42, ease: [0.16, 1, 0.3, 1] }}
+        transition={{ duration: 0.44, ease: [0.16, 1, 0.3, 1] }}
       >
-        {/* A slow sheen across the top edge, the same one the site uses. */}
+        {/* A slow sheen down the edge, the same one the site uses. */}
         <div className="ov__sheen" aria-hidden />
 
-        <div className="ov__ask">
+        {/*
+          The whole top of the column is the handle. There is nothing to click
+          up here anyway, and a window you can pick up anywhere is a window
+          nobody has to look for the grip on.
+        */}
+        <div className="ov__grip" onPointerDown={() => void api.overlayDrag()}>
           <Mark busy={busy} />
+          <span className="ov__title">Roundtable</span>
+          <button
+            type="button"
+            className="ov__close"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={dismiss}
+            aria-label="Close"
+          >
+            <svg viewBox="0 0 24 24" width={12} height={12} aria-hidden>
+              <path
+                d="M6 6l12 12M18 6L6 18"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+        </div>
+
+        <div className="ov__thread" ref={thread}>
+          {empty && (
+            <motion.div
+              className="ov__blank"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.7, delay: 0.25 }}
+            >
+              <p className="ov__blankLead">Ask about the game.</p>
+              <p className="ov__blankSub">
+                Both wikis are on this machine, so it reads them here and answers in
+                whatever language you asked in.
+              </p>
+            </motion.div>
+          )}
+
+          {said.map((line, index) => (
+            <motion.div
+              className="ov__said"
+              data-from={line.from}
+              key={index}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.36, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <p className="ov__text">{line.text}</p>
+
+              {line.from === "it" && line.sources && line.sources.length > 0 && (
+                <div className="ov__sources">
+                  {line.sources.slice(0, 4).map((title) => (
+                    <span className="ov__src" key={title}>
+                      {title.split(" · ")[0]}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {line.lane && (
+                <div className="ov__lane">
+                  {line.lane}
+                  {line.ms ? ` · ${(line.ms / 1000).toFixed(1)}s` : ""}
+                </div>
+              )}
+            </motion.div>
+          ))}
+
+          <AnimatePresence>
+            {stage === "working" && (
+              <motion.div
+                className="ov__working"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+              >
+                <div className="ov__stage">
+                  <span className="ov__dots" aria-hidden>
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                  {steps.length === 0 ? "Thinking" : "Working"}
+                </div>
+
+                {/*
+                  Every search the model wrote and every article it opened, in
+                  the order it did them. These are its decisions, not a
+                  progress bar — it chose the words, and seeing them is how you
+                  can tell whether it understood the question.
+                */}
+                {steps.length > 0 && (
+                  <div className="ov__steps">
+                    {steps.map((note, index) => (
+                      <motion.div
+                        className="ov__step"
+                        key={note}
+                        initial={{ opacity: 0, x: -4 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.28, delay: index * 0.03 }}
+                      >
+                        {note}
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* The line you type in, at the bottom of the column. */}
+        <div className="ov__ask" data-busy={busy}>
           <input
             ref={field}
             className="ov__field"
             value={question}
             spellCheck={false}
-            placeholder="Ask about the game"
+            placeholder={busy ? "Working…" : "Ask about the game"}
             onChange={(event) => setQuestion(event.target.value)}
             onKeyDown={(event) => event.key === "Enter" && void ask()}
           />
-          <kbd className="ov__kbd">{busy ? "…" : "↵"}</kbd>
+          <button
+            type="button"
+            className="ov__send"
+            onClick={() => void ask()}
+            disabled={busy || question.trim().length === 0}
+            aria-label="Ask"
+          >
+            <svg viewBox="0 0 24 24" width={14} height={14} aria-hidden>
+              <path
+                d="M5 12h13M12 6l6 6-6 6"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
         </div>
 
-        <AnimatePresence mode="wait">
-          {stage !== "idle" && (
-            <motion.div
-              key={stage === "answered" || stage === "failed" ? "done" : "working"}
-              className="ov__body"
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <div className="ov__line" />
-
-              {busy && <Working stage={stage} found={found} />}
-
-              {stage === "answered" && result && (
-                <motion.div
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-                >
-                  <p className="ov__answer">{result.answer}</p>
-                  <div className="ov__foot">
-                    <div className="ov__sources">
-                      {result.sources.slice(0, 4).map((title) => (
-                        <span className="ov__src" key={title}>
-                          {title}
-                        </span>
-                      ))}
-                    </div>
-                    {result.lane && <span className="ov__lane">{result.lane}</span>}
-                  </div>
-                </motion.div>
-              )}
-
-              {stage === "failed" && <p className="ov__failed">{failure}</p>}
-            </motion.div>
+        <div className="ov__hint">
+          <span>Shift F1 closes</span>
+          {said.length > 0 && (
+            <button type="button" className="ov__wipe" onClick={() => setSaid([])}>
+              Clear
+            </button>
           )}
-        </AnimatePresence>
+        </div>
       </motion.div>
-
-      <div className="ov__hint">
-        <span>Shift F1 to close</span>
-      </div>
     </div>
   );
 }
@@ -172,17 +342,17 @@ function Mark({ busy }: { busy: boolean }) {
     <motion.svg
       className="ov__mark"
       viewBox="0 0 24 24"
-      width={15}
-      height={15}
+      width={14}
+      height={14}
       animate={busy ? { rotate: 360 } : { rotate: 0 }}
       transition={
         busy
-          ? { duration: 2.4, repeat: Infinity, ease: "linear" }
+          ? { duration: 2.2, repeat: Infinity, ease: "linear" }
           : { duration: 0.6, ease: [0.16, 1, 0.3, 1] }
       }
       aria-hidden
     >
-      <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="1" opacity={0.35} />
+      <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="1" opacity={0.3} />
       <circle
         cx="12"
         cy="12"
@@ -194,43 +364,5 @@ function Mark({ busy }: { busy: boolean }) {
         strokeDasharray="14 43"
       />
     </motion.svg>
-  );
-}
-
-/**
- * What is happening, while it happens.
- *
- * The article titles are real — they are what the answer will be built from —
- * so this is progress rather than a decorative spinner.
- */
-function Working({ stage, found }: { stage: Stage; found: string[] }) {
-  return (
-    <div className="ov__working">
-      <div className="ov__stage">
-        <span className="ov__dots" aria-hidden>
-          <i />
-          <i />
-          <i />
-        </span>
-        {stage === "searching" ? "Searching the wiki" : "Reading"}
-      </div>
-
-      <div className="ov__sources">
-        <AnimatePresence>
-          {found.map((title, index) => (
-            <motion.span
-              className="ov__src"
-              key={title}
-              initial={{ opacity: 0, y: 5 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.32, delay: index * 0.06, ease: [0.16, 1, 0.3, 1] }}
-            >
-              {title}
-            </motion.span>
-          ))}
-        </AnimatePresence>
-      </div>
-    </div>
   );
 }

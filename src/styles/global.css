@@ -2257,123 +2257,233 @@ html.lenis { scroll-behavior: auto !important; }
 /* ══════════════════════════════════════════════════════════════════ */
 
 /*
- * The window that sits over the game.
+ * The window that stands over the game.
  *
  * Its own window rather than part of the launcher, because only a native window
  * can be told to stay above a game — and that only works at all because the
  * optimiser has already moved the game to borderless, where the desktop
  * composites it.
  *
- * The frame is transparent, so everything here is drawn rather than inherited:
- * the card carries its own ground, its own hairline and its own light.
+ * A standing column, not a panel across the middle. The middle of the screen is
+ * where the fight is; the side is where the wall is. Everything reads upward
+ * from the line you type in, the way a conversation does.
+ *
+ * The frame is transparent, so all of this is drawn rather than inherited: the
+ * column carries its own ground, its own hairline and its own light.
  */
 .ov {
   position: fixed;
   inset: 0;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--s3);
-  padding: var(--s4);
+  padding: 10px;
   background: transparent;
   /* A game is behind this. Text must not be selectable by a stray drag. */
   user-select: none;
 }
 
-.ov__card {
+.ov__column {
   position: relative;
-  width: 100%;
-  max-width: 620px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: var(--r-lg);
   /*
-   * Charcoal, lit from the top left, over near-black. The same gradient the
-   * launcher's cards use — the overlay should look like it came out of the
-   * same app, because it did.
+   * An oval rather than a rectangle with rounded corners. The horizontal radius
+   * is half the width, which is what makes the ends read as caps; the vertical
+   * one is kept shallow so the curve is a shape and not a hole — a true stadium
+   * on a column this tall would eat two hundred pixels at each end and leave
+   * the text sitting in a slot in the middle.
+   */
+  border-radius: 50% / 74px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  /*
+   * Charcoal lit from the top, over near-black. The same light the launcher
+   * cards use — this should look like it came out of the same app, because it
+   * did.
    */
   background:
-    radial-gradient(120% 90% at 12% -10%, rgba(255, 255, 255, 0.07), transparent 58%),
-    linear-gradient(180deg, rgba(24, 24, 24, 0.97), rgba(8, 8, 8, 0.97));
-  box-shadow: var(--sh-3), 0 0 0 1px rgba(0, 0, 0, 0.6);
+    radial-gradient(90% 40% at 50% -8%, rgba(255, 255, 255, 0.085), transparent 60%),
+    radial-gradient(80% 30% at 50% 104%, rgba(255, 255, 255, 0.05), transparent 60%),
+    linear-gradient(180deg, rgba(23, 23, 23, 0.97), rgba(7, 7, 7, 0.98));
+  box-shadow: var(--sh-3), 0 0 0 1px rgba(0, 0, 0, 0.55);
   /* The game shows through, faintly. It is an overlay, not a window on top. */
-  backdrop-filter: blur(18px) saturate(0.6);
+  backdrop-filter: blur(20px) saturate(0.6);
 }
 
-/* A single slow pass of light along the top edge. Nothing glows; it moves. */
+/*
+ * A single slow pass of light down the left edge.
+ *
+ * Down rather than across, because the column is vertical and a horizontal
+ * sweep on a shape this narrow is over before it registers. Nothing glows; it
+ * moves, once every several seconds, and is gone.
+ */
 .ov__sheen {
   position: absolute;
-  top: 0;
-  left: -40%;
-  width: 40%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
-  animation: ov-sheen 7s var(--ease) infinite;
+  top: -35%;
+  left: 0;
+  width: 1px;
+  height: 35%;
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  animation: ov-sheen 8s var(--ease) infinite;
   pointer-events: none;
 }
 @keyframes ov-sheen {
-  0%, 62% { transform: translateX(0); opacity: 0; }
-  68% { opacity: 1; }
-  100% { transform: translateX(350%); opacity: 0; }
+  0%, 60% { transform: translateY(0); opacity: 0; }
+  66% { opacity: 1; }
+  100% { transform: translateY(390%); opacity: 0; }
 }
 
-.ov__ask {
+/*
+ * The top of the column is the handle.
+ *
+ * All of it, because there is nothing else up here to click and a window you
+ * can pick up anywhere is a window nobody has to hunt for the grip on. The
+ * padding is deep because this sits inside the curve of the cap.
+ */
+.ov__grip {
   display: flex;
   align-items: center;
   gap: var(--s3);
-  padding: var(--s4) var(--s5);
+  flex: 0 0 auto;
+  padding: 30px var(--s5) var(--s3);
+  cursor: grab;
 }
+.ov__grip:active { cursor: grabbing; }
 
 .ov__mark { color: var(--w2); flex: 0 0 auto; }
 
-.ov__field {
+.ov__title {
   flex: 1;
-  min-width: 0;
-  background: none;
-  border: 0;
-  color: var(--w0);
-  font-size: var(--t-lg);
-  font-weight: 300;
-  letter-spacing: -0.015em;
-  user-select: text;
-}
-.ov__field:focus { outline: none; }
-.ov__field::placeholder { color: var(--w4); }
-
-.ov__kbd {
-  flex: 0 0 auto;
-  min-width: 24px;
-  padding: 3px 7px;
-  border: 1px solid var(--line-2);
-  border-radius: var(--r-sm);
   color: var(--w3);
-  font-family: var(--mono);
   font-size: var(--t-2xs);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.ov__close {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--w3);
+  cursor: pointer;
+  transition: background var(--t) var(--ease), color var(--t) var(--ease);
+}
+.ov__close:hover { background: rgba(255, 255, 255, 0.11); color: var(--w1); }
+
+/*
+ * Everything said so far.
+ *
+ * Masked top and bottom so the text fades into the curve of the cap instead of
+ * being cut off by it — a hard edge against a rounded container is the thing
+ * that makes a shape like this look like a mistake.
+ */
+.ov__thread {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  padding: var(--s3) var(--s5) var(--s4);
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 22px, #000 calc(100% - 16px), transparent);
+  mask-image: linear-gradient(180deg, transparent, #000 22px, #000 calc(100% - 16px), transparent);
+  scrollbar-width: none;
+}
+.ov__thread::-webkit-scrollbar { display: none; }
+
+.ov__blank {
+  margin: auto 0;
+  padding: 0 var(--s3);
   text-align: center;
 }
+.ov__blankLead {
+  margin-bottom: var(--s2);
+  color: var(--w2);
+  font-size: var(--t-sm);
+}
+.ov__blankSub {
+  color: var(--w4);
+  font-size: var(--t-xs);
+  line-height: 1.7;
+}
 
-.ov__line { height: 1px; background: var(--line); }
-.ov__body { overflow: hidden; }
+/* One line of the conversation. */
+.ov__said { display: flex; flex-direction: column; }
 
-.ov__working { padding: var(--s4) var(--s5); }
+/*
+ * A question is set apart by a rule rather than a bubble. Bubbles on a narrow
+ * column leave a gutter that is no use to anybody, and this has three hundred
+ * pixels to work with.
+ */
+.ov__said[data-from="you"] .ov__text {
+  padding-left: var(--s3);
+  border-left: 2px solid rgba(255, 255, 255, 0.22);
+  color: var(--w1);
+  font-size: var(--t-sm);
+}
+
+.ov__said[data-from="it"] .ov__text {
+  color: var(--w2);
+  font-size: var(--t-sm);
+}
+
+.ov__text {
+  line-height: 1.72;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.ov__sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-top: var(--s3);
+}
+
+.ov__src {
+  max-width: 100%;
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--w4);
+  font-size: var(--t-2xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ov__lane {
+  margin-top: var(--s2);
+  color: var(--w4);
+  font-family: var(--mono);
+  font-size: var(--t-2xs);
+}
+
+.ov__working { display: flex; flex-direction: column; }
 
 .ov__stage {
   display: flex;
   align-items: center;
-  gap: var(--s3);
+  gap: var(--s2);
   color: var(--w3);
-  font-size: var(--t-sm);
+  font-size: var(--t-xs);
+  letter-spacing: 0.04em;
 }
 
-/* Three dots, breathing in turn. */
 .ov__dots { display: inline-flex; gap: 3px; }
 .ov__dots i {
   width: 3px;
   height: 3px;
   border-radius: 50%;
-  background: var(--w2);
-  animation: ov-dot 1.3s var(--ease) infinite;
+  background: currentColor;
+  animation: ov-dot 1.25s var(--ease) infinite;
 }
 .ov__dots i:nth-child(2) { animation-delay: 0.16s; }
 .ov__dots i:nth-child(3) { animation-delay: 0.32s; }
@@ -2382,53 +2492,111 @@ html.lenis { scroll-behavior: auto !important; }
   40% { opacity: 1; transform: translateY(-2px); }
 }
 
-.ov__answer {
-  padding: var(--s4) var(--s5) 0;
+/*
+ * The line you type in, at the bottom of the column.
+ *
+ * Its own rounded field inside the oval, inset far enough to clear the curve.
+ * A field flush against a curved edge looks wedged into it.
+ */
+.ov__ask {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0 26px var(--s2);
+  padding: 4px 4px 4px var(--s4);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.045);
+  transition: border-color var(--t) var(--ease), background var(--t) var(--ease);
+}
+.ov__ask:focus-within {
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.07);
+}
+.ov__ask[data-busy="true"] { opacity: 0.72; }
+
+.ov__field {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  border: 0;
+  background: none;
   color: var(--w1);
-  font-size: var(--t-md);
-  line-height: 1.65;
+  font-size: var(--t-sm);
   user-select: text;
 }
+.ov__field:focus { outline: none; }
+.ov__field::placeholder { color: var(--w4); }
 
-/* The chips wrap onto a second line when there are four of them, so the model's
-   name sits with the last of them rather than floating in the middle. */
-.ov__foot {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--s4);
-  padding: var(--s4) var(--s5);
-}
-
-.ov__sources { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s3); }
-.ov__foot .ov__sources { margin-top: 0; }
-
-/* Where the answer came from, so it can be checked rather than trusted. */
-.ov__src {
-  padding: 3px 9px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-full);
-  color: var(--w3);
-  font-size: var(--t-2xs);
-  white-space: nowrap;
-}
-
-.ov__lane {
+.ov__send {
+  display: grid;
+  place-items: center;
   flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  color: #0a0a0a;
+  cursor: pointer;
+  transition: opacity var(--t) var(--ease), transform var(--t) var(--ease);
+}
+.ov__send:hover:not(:disabled) { transform: scale(1.06); }
+.ov__send:disabled {
+  background: rgba(255, 255, 255, 0.09);
   color: var(--w4);
-  font-family: var(--mono);
-  font-size: var(--t-2xs);
+  cursor: default;
 }
 
-.ov__failed {
-  padding: var(--s4) var(--s5);
-  color: var(--warn);
-  font-size: var(--t-sm);
-}
-
+/* Inside the bottom cap, where there is room for nothing else. */
 .ov__hint {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s3);
+  padding: 0 var(--s5) 26px;
   color: var(--w4);
   font-size: var(--t-2xs);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.ov__wipe {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--w4);
+  font-size: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  transition: color var(--t) var(--ease);
+}
+.ov__wipe:hover { color: var(--w2); }
+
+/*
+ * What the model chose to do, while it does it.
+ *
+ * The search it wrote and the article it opened, in order. These are its own
+ * decisions rather than a progress bar — it picks the words, so seeing them is
+ * how you can tell whether it understood the question before the answer lands.
+ */
+.ov__steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--s2);
+  padding-left: var(--s3);
+  border-left: 1px solid var(--line);
+}
+
+.ov__step {
+  color: var(--w4);
+  font-size: var(--t-2xs);
+  line-height: 1.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

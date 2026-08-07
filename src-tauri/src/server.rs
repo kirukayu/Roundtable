@@ -130,8 +130,10 @@ pub async fn start(app: Arc<AppState>) -> crate::error::Result<Server> {
         .route("/tune", get(tune_status).post(tune_apply))
         .route("/tune/revert", post(tune_revert))
         .route("/ask", post(ask_question))
-        .route("/ask/sources", get(ask_sources))
+        .route("/ask/stream", post(ask_stream))
         .route("/overlay/hide", post(overlay_hide))
+        .route("/overlay/drag", post(overlay_drag))
+        .route("/overlay/centre", post(overlay_centre))
         .route("/erss", get(erss_status).post(erss_install))
         .route("/erss/uninstall", post(erss_uninstall))
         .route("/erss/set", post(erss_set))
@@ -1092,48 +1094,152 @@ async fn overlay_hide() -> Response {
     Json(serde_json::json!({ "ok": true })).into_response()
 }
 
+/// The overlay being picked up and moved.
+async fn overlay_drag() -> Response {
+    crate::drag_overlay();
+    Json(serde_json::json!({ "ok": true })).into_response()
+}
+
+/// The overlay being put back in the middle, for when it has been dragged off.
+async fn overlay_centre() -> Response {
+    crate::centre_overlay();
+    Json(serde_json::json!({ "ok": true })).into_response()
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AskBody {
     question: String,
     #[serde(default)]
     edition: Option<String>,
+    /// What was said before this, so "and how do I beat her" has a her.
+    #[serde(default)]
+    history: Vec<crate::ask::Turn>,
 }
 
 /// A question about the game, answered out of the wiki.
 async fn ask_question(State(ctx): State<Ctx>, Json(body): Json<AskBody>) -> Response {
+    let player = player_state(&ctx, body.edition.as_deref());
     out(crate::ask::answer(
         &ctx.app.http,
         &ctx.app.app_data,
         body.edition.as_deref(),
+        &player,
         &body.question,
     )
     .await)
 }
 
-/// Which articles a question matches, without asking anything.
+/// What the assistant is allowed to know about this player's own game.
 ///
-/// The interface calls this first so it can name what it is reading while the
-/// model is still thinking. Waiting is easier when something is happening.
-async fn ask_sources(State(ctx): State<Ctx>, Query(q): Query<AskQuery>) -> Response {
-    let found = crate::ask::gather(
-        &ctx.app.http,
-        &ctx.app.app_data,
-        q.edition.as_deref(),
-        &q.question,
-        4,
-    )
-    .await;
-    Json(found.into_iter().map(|p| p.title).collect::<Vec<_>>()).into_response()
+/// Gathered here and handed over as plain data rather than reached for from
+/// inside the tool, so nothing in the answering path can wander into state it
+/// was not given — and so the whole of it can be tested without a game
+/// installed.
+///
+/// Only what changes an answer: their characters and levels, the version, what
+/// is installed. Not a path, not a Steam id, not an account name. The question
+/// "is this weapon worth it at my level" needs the level and nothing else.
+fn player_state(ctx: &Ctx, edition: Option<&str>) -> crate::ask::Player {
+    let game = ctx.app.settings.lock().selected_game;
+    let mut player = crate::ask::Player::default();
+
+    if let Ok(install) = ctx.app.active_install(game) {
+        player.version = install.version.clone();
+        player.framegen = crate::erss::owns_the_frame_cap(&install.game_dir);
+    }
+
+    player.edition = edition.and_then(|id| {
+        crate::edition::for_game(game)
+            .into_iter()
+            .find(|spec| spec.id == id)
+            .map(|spec| spec.name.to_string())
+    });
+
+    // The newest save, parsed. Characters are what a question turns on; which
+    // file they came out of is not the model's business.
+    let folders = crate::saves::discover(game, None);
+    // Not the game's own rolling backup, which is a copy of a save from before
+    // whatever they last did.
+    let newest = folders
+        .iter()
+        .flat_map(|folder| folder.entries.iter())
+        .filter(|entry| entry.flavour != crate::saves::SaveFlavour::GameBackup)
+        .max_by(|a, b| a.modified.cmp(&b.modified));
+    if let Some(entry) = newest {
+        if let Ok(summary) = crate::saves::inspect(&entry.path) {
+            player.characters = summary
+                .slots
+                .iter()
+                .filter(|slot| slot.active && !slot.name.trim().is_empty())
+                .map(|slot| (slot.name.clone(), slot.level, slot.seconds_played))
+                .collect();
+        }
+    }
+
+    let active = ctx.app.settings.lock().active_profile.clone();
+    let library = crate::mods::list_mods(&ctx.app.app_data, game);
+    if let Some(profile) = crate::mods::list_profiles(&ctx.app.app_data, game)
+        .into_iter()
+        .find(|profile| Some(&profile.id) == active.as_ref())
+    {
+        player.mods = profile
+            .mods
+            .iter()
+            .filter(|entry| entry.enabled)
+            .filter_map(|entry| {
+                library
+                    .iter()
+                    .find(|record| record.id == entry.mod_id)
+                    .map(|record| record.name.clone())
+            })
+            .collect();
+    }
+
+    player
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct AskQuery {
-    question: String,
-    #[serde(default)]
-    edition: Option<String>,
+/// The same question, reported as it is answered.
+///
+/// One line of JSON per event, which the window reads as it arrives: what is
+/// being searched, what was found, then the answer a few words at a time. The
+/// interface used to get the titles by asking a second time — two rounds of
+/// retrieval and two calls to the planner for one question — and the answer
+/// arrived all at once at the end of a spinner.
+async fn ask_stream(State(ctx): State<Ctx>, Json(body): Json<AskBody>) -> Response {
+    let (tx, rx) = tokio::sync::mpsc::channel::<String>(64);
+    let player = player_state(&ctx, body.edition.as_deref());
+
+    tokio::spawn(async move {
+        crate::ask::answer_stream(
+            &ctx.app.http,
+            &ctx.app.app_data,
+            body.edition.as_deref(),
+            &player,
+            &body.question,
+            &body.history,
+            |event| {
+                if let Ok(line) = serde_json::to_string(&event) {
+                    // The window may have been closed mid-answer, which is not
+                    // an error — there is simply nobody left to tell.
+                    let _ = tx.try_send(format!("{line}\n"));
+                }
+            },
+        )
+        .await;
+    });
+
+    let stream = futures_util::stream::unfold(rx, |mut rx| async move {
+        rx.recv().await.map(|line| (Ok::<_, std::io::Error>(line), rx))
+    });
+
+    Response::builder()
+        .header("content-type", "application/x-ndjson")
+        .header("cache-control", "no-cache")
+        .body(axum::body::Body::from_stream(stream))
+        .unwrap_or_else(|_| out::<()>(Err(crate::error::Error::msg("could not open the stream"))))
 }
+
 
 /// DLSS, frame generation and Reflex, and whether the game is ready for them.
 async fn erss_status(State(ctx): State<Ctx>, Query(q): Query<GameQ>) -> Response {

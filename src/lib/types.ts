@@ -372,6 +372,27 @@ export interface AskAnswer {
   ms: number | null;
 }
 
+/** One exchange, kept so the next question can refer back to it. */
+export interface AskTurn {
+  question: string;
+  answer: string;
+}
+
+/**
+ * Something that happened on the way to an answer.
+ *
+ * Reported as it happens rather than at the end: which articles are being read,
+ * then the answer itself a few words at a time.
+ */
+export type AskEvent =
+  /** What the model chose to do, in its own words: the search it wrote, the
+      article it opened. Not a spinner — the actual step. */
+  | { kind: "doing"; note: string }
+  | { kind: "sources"; sources: string[] }
+  | { kind: "delta"; text: string }
+  | { kind: "done"; lane: string | null; ms: number | null }
+  | { kind: "failed"; error: string };
+
 /** A Windows setting the game cannot reach on its own. */
 export interface Lever {
   id: string;
