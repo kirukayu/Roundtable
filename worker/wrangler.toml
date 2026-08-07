@@ -18,5 +18,26 @@ compatibility_date = "2026-08-01"
 [ai]
 binding = "AI"
 
+# Counting requests in the isolate does not work: Cloudflare spreads traffic
+# across isolates and each one starts from zero, so sixteen rapid calls sailed
+# through a cap of twelve. This binding is backed by the same machinery as
+# Cloudflare's own rate limiting rules and is shared across the location.
+[[ratelimits]]
+name = "PER_MINUTE"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 12
+  period = 60
+
+# A slower, wider net: bursts are fine, an afternoon of them is not.
+[[ratelimits]]
+name = "SUSTAINED"
+namespace_id = "1002"
+
+  [ratelimits.simple]
+  limit = 90
+  period = 60
+
 [observability]
 enabled = true
