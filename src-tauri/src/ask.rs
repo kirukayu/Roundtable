@@ -131,7 +131,14 @@ fn translit(word: &str) -> Option<String> {
 /// "malenia" and "radahn" meeting "radagon" — two different demigods four
 /// letters apart.
 fn same_word(part: &str, word: &str) -> bool {
-    if part.starts_with(word) {
+    if part == word {
+        return true;
+    }
+    // A short word has to match outright. Treating it as a prefix is how "how
+    // to beat Malenia" came back as "Tools, Torch, Torrent, Torchpole": "to"
+    // begins all of them, each counted as a word matched, and four junk matches
+    // outscored the one title with her name in it.
+    if word.chars().count() >= MEANINGFUL && part.starts_with(word) {
         return true;
     }
     let shared = part
@@ -142,6 +149,47 @@ fn same_word(part: &str, word: &str) -> bool {
     let shorter = part.chars().count().min(word.chars().count());
     shared >= 5 && shared * 10 >= shorter * 7
 }
+
+/// What is left of a title's score when the query named something and the title
+/// is not about it.
+///
+/// Held back rather than dropped: a query's first word is capitalised by the
+/// grammar rather than by intent, so "How to farm runes" names "How", and a
+/// title matching only "runes" would be thrown away by a rule that removed
+/// these outright.
+const UNNAMED: f32 = 0.3;
+
+/// The words a query wrote with a capital letter, lowercased.
+///
+/// Transliterated too, so a name typed in one alphabet still counts as a name
+/// when it is matched against titles written in another.
+fn capitalised(query: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    for word in query.split(|c: char| !c.is_alphanumeric()) {
+        if word.chars().count() < 2 {
+            continue;
+        }
+        if !word.chars().next().is_some_and(char::is_uppercase) {
+            continue;
+        }
+        let lower = word.to_lowercase();
+        if let Some(latin) = translit(&lower) {
+            if !found.contains(&latin) {
+                found.push(latin);
+            }
+        }
+        if !found.contains(&lower) {
+            found.push(lower);
+        }
+    }
+    found
+}
+
+/// The length at which a word is long enough to stand for what follows it.
+///
+/// Below this a query word only matches itself. Four is where "boss" still
+/// reaches "bosses" and "to" no longer reaches "torch".
+const MEANINGFUL: usize = 4;
 
 /// The titles of one wiki, with how common each word in them is.
 ///
@@ -208,6 +256,19 @@ impl Index {
             return Vec::new();
         }
 
+        // What the reader capitalised is what they are asking about.
+        //
+        // Rarity alone gets this backwards on a wiki. Against the real mirror
+        // "boss" is worth 6.9 and "radahn" 5.5 — not because "boss" says more,
+        // but because a demigod with a dozen articles looks like a common word
+        // while a word confined to a few index pages looks rare. So "Radahn
+        // boss" was answered with the list of every boss in the game.
+        //
+        // A title that matches none of the named words is held back rather than
+        // the named words being made heavier: a multiplier would have to be
+        // tuned to how far apart those two weights happen to fall, and that
+        // gap is a property of one wiki on one day.
+        let named = capitalised(query);
         let weights: Vec<(String, f32)> =
             wanted.iter().map(|w| (w.clone(), self.weight(w))).collect();
 
@@ -243,6 +304,7 @@ impl Index {
 
                 let mut score = 0.0f32;
                 let mut matched = 0usize;
+                let mut has_a_name = false;
 
                 for (word, weight) in &weights {
                     if *weight <= 0.0 {
@@ -257,6 +319,9 @@ impl Index {
                     };
                     matched += 1;
                     score += weight;
+                    if named.contains(word) {
+                        has_a_name = true;
+                    }
 
                     if at == head {
                         score += weight * 0.8;
@@ -284,6 +349,14 @@ impl Index {
                 if lower.contains('/') {
                     score *= 0.4;
                 }
+                // Nothing the query named. When a query names something, a
+                // title that does not mention it is about something else, and
+                // no amount of matching the ordinary words around it changes
+                // that.
+                if !named.is_empty() && !has_a_name {
+                    score *= UNNAMED;
+                }
+
                 // Words the query did not ask about are noise in the title.
                 let spare = parts.len().saturating_sub(matched) as f32;
                 score /= 1.0 + spare * 0.12;
@@ -1573,6 +1646,14 @@ pub async fn answer(
     Ok(Answer { answer: text, sources, lane, ms })
 }
 
+/// What one word is worth to the ranking, for working out why a search ranked
+/// what it did.
+pub fn word_weight(app_data: &Path, word: &str) -> f32 {
+    wikis(None)
+        .first()
+        .map_or(0.0, |source| index_for(app_data, source).weight(word))
+}
+
 /// Which articles a question matches, for anything that wants a list without
 /// spending a model call on it.
 pub fn matching_titles(app_data: &Path, edition: Option<&str>, query: &str, limit: usize) -> Vec<PathBuf> {
@@ -1675,6 +1756,79 @@ mod tests {
         assert_eq!(best(&all, "scarlet rot").map(String::as_str), Some("Scarlet Rot"));
         assert_eq!(best(&all, "vigor").map(String::as_str), Some("Vigor"));
         assert_eq!(best(&all, "arcane").map(String::as_str), Some("Arcane"));
+    }
+
+    #[test]
+    fn a_short_word_does_not_stand_for_every_word_it_begins() {
+        // Measured against the real mirror: "Malenia boss fight how to beat"
+        // came back "Bosses, Tools, Torch, Torches, Torrent, Torchpole". Every
+        // one of those begins with "to", each counted as a word matched, and
+        // six junk matches buried the one title with her name in it.
+        assert!(!same_word("torch", "to"));
+        assert!(!same_word("torrent", "to"));
+        assert!(!same_word("gethsemane", "get"));
+        // Four letters is still enough to reach a plural or a possessive.
+        assert!(same_word("bosses", "boss"));
+        assert!(same_word("malenias", "malenia"));
+        // And a word always matches itself, however short.
+        assert!(same_word("to", "to"));
+        assert!(same_word("of", "of"));
+    }
+
+    #[test]
+    fn a_name_outranks_a_common_word_it_loses_to_on_frequency() {
+        // The case rarity gets backwards. Against the real mirror "boss" scores
+        // 6.9 and "radahn" 5.5 — not because "boss" says more, but because a
+        // demigod with a dozen articles looks common while a word confined to a
+        // few index pages looks rare. So "Radahn boss" was answered with the
+        // list of every boss in the game.
+        // Sized like a wiki. In a nine-title index a demigod owns two thirds of
+        // the corpus and his name is worth nothing at all — which is not the
+        // situation being tested, and a rule tuned to it would be tuned to a
+        // fiction. The real mirror is five thousand titles with twenty about
+        // him and five about bosses in general.
+        let mut titles: Vec<String> = (0..60).map(|n| format!("Some Other Page {n}")).collect();
+        for title in [
+            "Bosses",
+            "Remembrance Bosses",
+            "Wormface (boss)",
+            "Starscourge Radahn",
+            "Radahn Soldier Set",
+            "Radahn Soldier",
+            "Radahn Soldier Ashes",
+            "Radahn Festival",
+            "Radahn's Great Rune",
+        ] {
+            titles.push(title.to_string());
+        }
+        let all = Index::build(titles);
+        assert!(
+            all.weight("boss") > all.weight("radahn"),
+            "the premise: frequency alone prefers the common word"
+        );
+        assert_eq!(
+            best(&all, "Radahn boss").map(String::as_str),
+            Some("Starscourge Radahn"),
+            "the capital letter is what says which word was the subject"
+        );
+        // Written without the capital there is nothing to go on, and the old
+        // answer stands — this adds a signal, it does not invent one.
+        assert_eq!(best(&all, "radahn boss").map(String::as_str), Some("Bosses"));
+    }
+
+    #[test]
+    fn the_words_a_query_capitalised_are_found_in_either_alphabet() {
+        let found = capitalised("How do I beat Malenia");
+        assert!(found.contains(&"malenia".to_string()), "{found:?}");
+        // Sentence case is unavoidable and harmless: "how" is short and worth
+        // almost nothing, so boosting it changes no ranking.
+        assert!(found.contains(&"how".to_string()));
+        assert!(!found.contains(&"beat".to_string()));
+
+        // A name typed in Cyrillic arrives as both, so it can meet an English
+        // title.
+        let russian = capitalised("Как убить Малению");
+        assert!(russian.iter().any(|w| w.starts_with("malen")), "{russian:?}");
     }
 
     #[test]
