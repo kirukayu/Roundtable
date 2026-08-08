@@ -1,26 +1,18 @@
 //! A model with the wiki as a tool.
 //!
-//! Not a search box with a model bolted on the end. The launcher holds both
-//! wikis on disk and exposes them as two functions — look up titles, read an
-//! article — and the model decides what to look up, reads what comes back,
-//! looks up something else if that was not it, and answers when it has enough.
+//! Both wikis sit on disk and are exposed as functions — look up titles, read
+//! an article, ask the running game. The model decides what to look up, reads
+//! what comes back, looks up something else if that was not it, and answers
+//! when it has enough.
 //!
-//! That is the whole reason this file was rewritten. It used to guess, on the
-//! player's behalf, what a question was about: a table of Russian verbs mapped
-//! to English article names, a list of words considered too common to search
-//! for, a rule about greetings not being worth a lookup. Every one of those was
-//! a hand-written fragment of a job a model does properly, and every one of
-//! them was wrong in some language nobody had thought about. There are no
-//! keyword tables left here.
+//! There are no keyword tables here, deliberately. This file used to guess what
+//! a question was about with a table of Russian verbs, a list of words too
+//! common to search for, and a rule about greetings — hand-written fragments of
+//! a job a model does properly, each wrong in some language nobody had thought
+//! about.
 //!
-//! What is left is machinery: an index over the mirrored titles, ranked by how
-//! rare each word is rather than by a list of words to ignore, and a loop that
-//! carries the model's tool calls back and forth. Both wikis are searched, and
-//! which edition is installed only decides which one wins a tie.
-//!
-//! Retrieval stays on this machine. Only a question and the passages the model
-//! actually asked for ever leave it, which is what keeps a handful of free
-//! tiers stretching across everybody using this.
+//! Retrieval stays on this machine: only the question and the passages the
+//! model asked for ever leave it.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -44,23 +36,12 @@ const MAX_ROUNDS: usize = 4;
 
 /// How much of an article comes back from one read.
 ///
-/// The single number that decides whether the pool works. Free tiers meter
-/// tokens per minute rather than requests, and every round re-sends the whole
-/// conversation — so this is multiplied by the number of reads and again by the
-/// number of rounds. At nine thousand characters, which is where it started, a
-/// single question pushed something like thirty thousand tokens through one
-/// provider in a few seconds and earned a 429 from every lane in turn; the
-/// answer then came from whichever model was left, which was the worst one.
-///
-/// Twenty-six hundred was the number while the pool was one account per
-/// provider and every question was a minute of somebody's allowance. It is
-/// twenty-five accounts now, and the constraint moved: at twenty-six hundred a
-/// question about a boss got the top of the page and came back "there was not
-/// enough information", which is a worse failure than a slow answer.
-///
-/// Four thousand is a whole strategy section, and it is chosen as the section
-/// that matches rather than the first one, so it is nearly always the part that
-/// holds the answer.
+/// Free tiers meter tokens per minute, and every round re-sends the whole
+/// conversation, so this is multiplied by reads and again by rounds: at nine
+/// thousand one question earned a 429 from every lane in turn. Too small costs
+/// more than it saves — at 2600 a question about a boss came back "not enough
+/// information". Four thousand is a whole strategy section, and the section
+/// chosen is the one that matches rather than the first.
 const ARTICLE: usize = 4000;
 
 /// How much of an older tool result is kept when the conversation is re-sent.
@@ -119,25 +100,17 @@ fn translit(word: &str) -> Option<String> {
 
 /// Whether two words are the same word.
 ///
-/// A prefix is not enough on its own and an exact match is too much. The model
-/// searches in English and the titles are English, so most of the time this is
-/// a plain prefix — but a name that came through the alphabet the player typed
-/// it in arrives bent: "Малению" transliterates to "maleniyu" and the wiki
-/// writes "Malenia", which share six letters and neither of which is a prefix
-/// of the other.
-///
-/// So: a prefix, or a long enough shared beginning. Long enough is five letters
-/// and most of the shorter word, which is the line between "maleniyu" meeting
-/// "malenia" and "radahn" meeting "radagon" — two different demigods four
-/// letters apart.
+/// A prefix, or a long enough shared beginning — a name typed in another
+/// alphabet arrives bent, "Малению" transliterating to "maleniyu" against the
+/// wiki's "Malenia". Five letters and most of the shorter word is the line
+/// between those two meeting and "radahn" meeting "radagon".
 fn same_word(part: &str, word: &str) -> bool {
     if part == word {
         return true;
     }
-    // A short word has to match outright. Treating it as a prefix is how "how
-    // to beat Malenia" came back as "Tools, Torch, Torrent, Torchpole": "to"
-    // begins all of them, each counted as a word matched, and four junk matches
-    // outscored the one title with her name in it.
+    // A short word has to match outright. As a prefix, "how to beat Malenia"
+    // came back "Tools, Torch, Torrent, Torchpole" — all begun by "to", each
+    // counted as a word matched, burying the title with her name in it.
     if word.chars().count() >= MEANINGFUL && part.starts_with(word) {
         return true;
     }
@@ -256,18 +229,11 @@ impl Index {
             return Vec::new();
         }
 
-        // What the reader capitalised is what they are asking about.
-        //
-        // Rarity alone gets this backwards on a wiki. Against the real mirror
-        // "boss" is worth 6.9 and "radahn" 5.5 — not because "boss" says more,
-        // but because a demigod with a dozen articles looks like a common word
-        // while a word confined to a few index pages looks rare. So "Radahn
-        // boss" was answered with the list of every boss in the game.
-        //
-        // A title that matches none of the named words is held back rather than
-        // the named words being made heavier: a multiplier would have to be
-        // tuned to how far apart those two weights happen to fall, and that
-        // gap is a property of one wiki on one day.
+        // What the reader capitalised is what they are asking about. Rarity
+        // gets this backwards: "boss" is worth 6.9 against "radahn" at 5.5,
+        // because a demigod with a dozen articles looks common while a word
+        // confined to index pages looks rare — so "Radahn boss" was answered
+        // with the list of every boss in the game.
         let named = capitalised(query);
         let weights: Vec<(String, f32)> =
             wanted.iter().map(|w| (w.clone(), self.weight(w))).collect();
@@ -1322,17 +1288,12 @@ pub async fn answer_stream<F>(
     stream_final(http, &messages, edition, question, &mut emit).await;
 }
 
-/// The conversation with the parts nobody needs in full any more cut down.
+/// The conversation with what nobody needs in full any more cut down.
 ///
-/// Every round re-sends everything, and the free tiers meter tokens per minute
-/// — so an article read four rounds ago is four times the cost of reading it
-/// once, for no benefit. The model has already acted on it; what it needs now
-/// is the reminder, not the text.
-///
-/// The most recent results stay whole, because those are the ones it is
-/// actually reasoning over. Nothing is dropped: a truncated result still says
-/// which article it was and what the first of it said, so the model can ask for
-/// it again if it turns out to matter.
+/// Every round re-sends everything against a per-minute token budget, so an
+/// article read four rounds ago costs four times what reading it did. Only the
+/// newest results stay whole; the rest keep their title and opening, so the
+/// model can ask again if it turns out to matter.
 fn trimmed(messages: &[serde_json::Value]) -> Vec<serde_json::Value> {
     let results: Vec<usize> = messages
         .iter()
@@ -1437,21 +1398,12 @@ async fn stream_final<F>(
 ) where
     F: FnMut(Event),
 {
-    // A reminder of which language to write in, as an instruction rather than
-    // as a message.
+    // The question again, so the reply matches the language it was asked in.
+    // The system prompt says to, and four rounds of English wiki pages is
+    // enough to drown it — a Japanese question came back in English.
     //
-    // "Reply in the language the player used" is in the system prompt and is
-    // followed most of the time. Most of the time is not enough: a Japanese
-    // question came back in English after four rounds of reading English wiki
-    // pages, because by then the English was all the model could see. Showing
-    // it the original words again fixes that, and needs no language detection
-    // at all — the thing to match is right there.
-    //
-    // It has to arrive as a system instruction. The first attempt put the
-    // question back as a *user* message, and short inputs were then echoed
-    // straight back: "asdfgh" was answered with "asdfgh". A model handed a
-    // user turn will try to respond to it, and the only sensible response to a
-    // repeated question is the question.
+    // As a system instruction, never as a user message: handed a user turn the
+    // model answers it, and "asdfgh" was answered with "asdfgh".
     let mut messages = trimmed(messages);
     messages.push(serde_json::json!({
         "role": "system",

@@ -1,16 +1,13 @@
 //! The character the game has open right now.
 //!
-//! Not the save. The save is whichever slot was written last and whatever it
-//! held at the last grace; the question "should I go for this boss" turns on the
-//! slot actually being played and the level actually reached. Reading the wrong
-//! one is how the assistant told somebody they were level 12 while they were
-//! standing in the world at 34.
+//! Not the save, which holds every character ever made and only as of the last
+//! grace — reading it is how the assistant told somebody they were level 12
+//! while they stood in the world at 34.
 //!
-//! Every offset below was read off a running game rather than remembered, and
-//! each is checked before it is believed: the eight attributes have to be in
-//! range and to add up to the level, and the level has to be one a character can
-//! be. When the checks fail this reports nothing. A wrong level is worse than no
-//! level, because the advice built on it sounds equally certain.
+//! Every offset here was read off a running game, and each is checked before it
+//! is believed: the attributes must be in range and add up to the level. When
+//! the checks fail this reports nothing, because a wrong level is worse than no
+//! level — the advice built on it sounds equally certain.
 
 use serde::Serialize;
 

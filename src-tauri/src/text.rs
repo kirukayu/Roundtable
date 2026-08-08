@@ -1,21 +1,16 @@
 //! The game's own words for things.
 //!
-//! Every item, place and spell has a name, and the game is carrying all of them
-//! in memory already. Reading them from there rather than from a table shipped
-//! with the launcher settles two problems at once: a total conversion that
-//! renames half the game is answered correctly, because its names are the ones
-//! loaded; and the answer comes back in whatever language the player installed,
-//! which is the language they are reading off their own screen.
+//! Reading names out of the running game rather than a shipped table settles
+//! two problems at once: a total conversion that renames half the game is
+//! answered correctly, and the answer comes back in the language the player is
+//! reading off their screen. A flat list of ids was wrong both ways — `1040000`
+//! is a dagger in one table and a helmet in another, and a modded game's ids
+//! are in no table at all.
 //!
-//! The alternative was a flat list of ids, and it was wrong in both directions —
-//! `1040000` is a dagger in one table and a helmet in another, and the ids a
-//! modded game uses are not in any table at all.
-//!
-//! Reads only. The game has a function for this and it would be one call, but a
-//! launcher that runs code inside a running game is a launcher that can crash it
-//! and that looks, to anything watching, exactly like a cheat. The structure
-//! behind that function is walked here instead, and the result was checked
-//! against the function's own answer on sixteen lookups before this was written.
+//! Reads only. The game has a function for this, but a launcher that runs code
+//! inside a running game can crash it and looks, to anything watching, like a
+//! cheat. The structure behind that function is walked here instead; the result
+//! was checked against the function's own answer on sixteen lookups first.
 
 use std::collections::HashMap;
 

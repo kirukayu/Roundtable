@@ -568,22 +568,14 @@ pub fn install(
 
     std::fs::remove_dir_all(&staging).ok();
 
-    // Written is not the same as still there.
+    // Written is not the same as still there: Defender takes these for malware
+    // and deletes them seconds after they land, so every copied file is read
+    // back rather than trusted.
     //
-    // The author warns that Defender takes these for malware, and a real-time
-    // scanner deletes a file seconds after it lands. Reporting a successful
-    // install and leaving the player to find out at the title screen is the
-    // worst of both, so every file this install copied is read back — the files
-    // themselves rather than a list of names, which would go stale the first
-    // time a release drops one.
-    // Looked at twice, a moment apart.
-    //
-    // A real-time scanner holds a file it is examining, and a file called
-    // `D3D12.dll` that has just appeared is exactly what it examines hardest —
-    // so a single check reports it missing while it is merely busy. A file
-    // Defender has actually taken is gone and stays gone, which is what the
-    // second look distinguishes. Without this the check fired at random on
-    // files that were perfectly fine.
+    // Twice, a moment apart. A scanner holds the file it is examining, and a
+    // freshly-appeared `D3D12.dll` is what it examines hardest — one look
+    // reports it missing while it is merely busy. What Defender has actually
+    // taken stays gone.
     let mut missing = absent(game_dir, &files);
     if !missing.is_empty() {
         std::thread::sleep(std::time::Duration::from_millis(700));
@@ -701,14 +693,11 @@ fn config_path(game_dir: &Path) -> PathBuf {
 
 /// A setting Roundtable knows how to present, addressed the way the file holds it.
 ///
-/// `path` is `Section.Key`, or a bare key for the handful that sit at the top of
-/// the file. That distinction is the whole reason this pane did not work: the
-/// mod keeps almost everything in sections — `[Renderer]`, `[DLSS]`,
-/// `[FrameGeneration]` — and the first version of this code read and wrote only
-/// top-level keys. So the pane showed four settings that did not matter, and
-/// writing "DLSSMode" created a stray top-level key beside the real
-/// `[DLSS] DLSSMode`, which the mod went on ignoring. The player changed things
-/// in the launcher and nothing happened, which is exactly what they reported.
+/// `path` is `Section.Key`, or a bare key for the few at the top of the file.
+/// That distinction is why this pane once did nothing: the mod keeps almost
+/// everything in `[Renderer]`, `[DLSS]`, `[FrameGeneration]`, and the first
+/// version read and wrote only top-level keys — so writing "DLSSMode" created a
+/// stray key beside the real `[DLSS] DLSSMode` and the mod ignored both.
 struct Known {
     path: &'static str,
     title: &'static str,
@@ -1142,17 +1131,13 @@ fn spaced(path: &str) -> String {
 
 /// Writes the three settings that can be chosen before the game has ever run.
 ///
-/// The mod generates its own config the first time it loads, which would leave
-/// this pane empty until then — and the one thing somebody wants beforehand is
-/// the key that opens it. The author publishes an optional three-line
-/// `ERSS-FG.toml` meant to be dropped in ahead of the mod, which is the proof
-/// that a partial file is read and filled in rather than rejected.
+/// The mod writes its own config on first load, which would leave this pane
+/// empty until then. The author publishes an optional three-line `ERSS-FG.toml`
+/// for exactly this, so a partial file is filled in rather than rejected.
 ///
-/// Those three lines and no more. An earlier version added `DLSSMode = 2` here
-/// on the reasoning that DLSS quality is worth choosing early, and that was
-/// wrong in a way worth remembering: the mod keeps DLSS quality at
-/// `[DLSS] DLSSMode`, so what this created was a stray top-level key that the
-/// mod never read and that sat in the file looking authoritative.
+/// Those three lines and no more. Adding `DLSSMode = 2` here once seemed
+/// sensible and was not: the mod reads DLSS quality from `[DLSS] DLSSMode`, so
+/// it created a stray top-level key that nothing read and everything trusted.
 ///
 /// An existing file is never touched — those are the player's choices.
 pub fn seed(game_dir: &Path) -> Result<bool> {
@@ -1412,21 +1397,13 @@ mod tests {
 
     /// A scratch folder under `target`, not under the system temp.
     ///
-    /// These tests write files called `D3D12.dll` and `nvngx_dlss.dll`, and a
-    /// file with one of those names appearing in the Windows temp folder is
-    /// precisely what a real-time scanner examines hardest. It holds the file
-    /// while it looks, the post-install read-back finds it absent, and the test
-    /// fails — not every run, which is worse than always.
+    /// These tests write `D3D12.dll` and `nvngx_dlss.dll`, and those names in
+    /// the Windows temp folder are what a scanner examines hardest — it holds
+    /// the file, the read-back finds it absent, and the test fails on maybe one
+    /// run in four. `target` is not scanned.
     ///
-    /// `target` is already excluded from scanning on any machine that builds
-    /// this often enough to notice, and it is the conventional place for build
-    /// scratch anyway.
-    ///
-    /// The name has to be unique per test. Two of these tests were passed
-    /// "stray" and ran in parallel, and since this wipes the folder before it
-    /// uses it, one deleted the other's files mid-run — which showed up as an
-    /// install failing on a file that had been there a moment earlier, about
-    /// one run in four.
+    /// The name must be unique per test: this wipes the folder first, so two
+    /// tests sharing one deleted each other's files mid-run.
     fn temp(name: &str) -> PathBuf {
         let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("target")
