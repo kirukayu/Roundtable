@@ -258,7 +258,18 @@ impl<'a> Text<'a> {
         }
 
         let mut found = Vec::new();
-        for kind in [Kind::Weapon, Kind::Armour, Kind::Talisman, Kind::Goods] {
+        // Places and characters as well as things carried. A model asked where
+        // a boss is will otherwise translate the English name itself: the arena
+        // the game calls "Воющие дюны" came back as "Стонущие дюны", which is a
+        // reasonable translation of the English and not what is on the screen.
+        for kind in [
+            Kind::Weapon,
+            Kind::Armour,
+            Kind::Talisman,
+            Kind::Goods,
+            Kind::Place,
+            Kind::Npc,
+        ] {
             for (id, name) in self.index(kind) {
                 let lower = name.to_lowercase();
                 if !lower.contains(&needle) {

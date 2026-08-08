@@ -158,6 +158,35 @@ fn capitalised(query: &str) -> Vec<String> {
     found
 }
 
+/// How many single-letter changes turn one word into the other.
+///
+/// Bounded by the shorter row rather than a full matrix, because this runs
+/// against every word of seven thousand titles and only the small answers
+/// matter — anything past `most` is reported as `most` and thrown away.
+fn apart(a: &str, b: &str) -> usize {
+    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
+    let most = 4usize;
+    if a.len().abs_diff(b.len()) > most {
+        return most;
+    }
+
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, from) in a.iter().enumerate() {
+        let mut previous = row[0];
+        row[0] = i + 1;
+        for (j, to) in b.iter().enumerate() {
+            let cost = usize::from(from != to);
+            let next = (row[j] + 1).min(row[j + 1] + 1).min(previous + cost);
+            previous = row[j + 1];
+            row[j + 1] = next;
+        }
+        if row.iter().min().copied().unwrap_or(most) > most {
+            return most;
+        }
+    }
+    row[b.len()].min(most)
+}
+
 /// What two titles share when they name the same article.
 ///
 /// Case, punctuation and a plural are all a redirect ever changes, so stripping
@@ -226,6 +255,52 @@ impl Index {
             })
             .max(1) as f32;
         (total / count).ln().max(0.0)
+    }
+
+    /// Titles whose words are nearly the one given, for a name that matched
+    /// nothing.
+    ///
+    /// The model transliterates whatever the player typed and gets close rather
+    /// than right: "Реллана" came back as "Relanna", which no title contains —
+    /// but "Rellana" is two letters away, and "Rennala" is a different boss.
+    /// Offering both as guesses lets the model choose; matching them quietly
+    /// would choose for it, and it chose Rennala.
+    pub fn nearest(&self, word: &str, limit: usize) -> Vec<String> {
+        let needle = word.to_lowercase();
+        if needle.chars().count() < MEANINGFUL {
+            return Vec::new();
+        }
+        // Two letters in a seven-letter name, which is what "Relanna" is away
+        // from "Rellana". Generous on purpose: this only runs for a word that
+        // matched nothing at all, and what it returns is offered to the model
+        // as a guess rather than used as an answer.
+        let room = ((needle.chars().count() + 2) / 4).clamp(1, 3);
+
+        let mut close: Vec<(usize, &String)> = Vec::new();
+        for title in &self.titles {
+            let best = title
+                .to_lowercase()
+                .split(|c: char| !c.is_alphanumeric())
+                .filter(|part| !part.is_empty())
+                .map(|part| apart(part, &needle))
+                .min();
+            if best.is_some_and(|distance| distance <= room) {
+                close.push((best.unwrap_or(room), title));
+            }
+        }
+        close.sort_by_key(|(distance, title)| (*distance, title.chars().count()));
+
+        let mut out: Vec<String> = Vec::new();
+        for (_, title) in close {
+            if out.iter().any(|kept| one_thing(kept) == one_thing(title)) {
+                continue;
+            }
+            out.push(title.clone());
+            if out.len() >= limit {
+                break;
+            }
+        }
+        out
     }
 
     /// The names in a query that appear in no title at all.
@@ -451,12 +526,57 @@ fn index_for(app_data: &Path, source: &'static crate::wiki::WikiSource) -> Arc<I
 /// from a friend. The mod keeps most of the base game, so the two overlap
 /// heavily and neither alone is the right answer.
 fn wikis(edition: Option<&str>) -> Vec<&'static crate::wiki::WikiSource> {
+    reading(edition, None)
+}
+
+/// The two-letter code for a language the game names in full.
+///
+/// Only the ones a wiki is written in are worth answering for; the rest have no
+/// translation to look up and get the English name, which is honest.
+fn short_code(language: &str) -> Option<&'static str> {
+    let plain = language.to_lowercase();
+    [
+        ("rus", "ru"),
+        ("ukrain", "uk"),
+        ("polish", "pl"),
+        ("german", "de"),
+        ("french", "fr"),
+        ("spanish", "es"),
+        ("italian", "it"),
+        ("portug", "pt"),
+        ("japan", "ja"),
+        ("korean", "ko"),
+        ("chinese", "zh"),
+    ]
+    .into_iter()
+    .find(|(needle, _)| plain.contains(needle))
+    .map(|(_, code)| code)
+}
+
+/// The wikis worth searching, given what language the game is in.
+///
+/// A wiki in the player's own language only earns its place when they are
+/// playing in it. For everybody else its titles are noise in every result, and
+/// for a Russian player it is the only written source that uses the names on
+/// their screen — without it the model translates the English itself and
+/// invents "Стонущие дюны" for an arena the game calls "Воющие дюны".
+fn reading(
+    edition: Option<&str>,
+    language: Option<&str>,
+) -> Vec<&'static crate::wiki::WikiSource> {
     let first = crate::wiki::for_edition(edition);
     let mut out = vec![first];
     for other in crate::wiki::SOURCES {
-        if other.id != first.id {
-            out.push(other);
+        if other.id == first.id {
+            continue;
         }
+        if let Some(needs) = crate::wiki::spoken_in(other) {
+            let theirs = language.unwrap_or_default().to_lowercase();
+            if !theirs.contains(needs) {
+                continue;
+            }
+        }
+        out.push(other);
     }
     out
 }
@@ -552,16 +672,21 @@ fn tool_schemas() -> serde_json::Value {
             "function": {
                 "name": "game_item",
                 "description":
-                    "Look something up in THIS player's running game, in the game's own words. \
-                     Returns what the item is called on their screen, the line the menu prints \
-                     for what it does, and its description — read out of the game's memory, so \
-                     it is right even for items a total conversion invented or renamed, which \
-                     no wiki and no shipped table can be. Prefer this over item_stats and over \
-                     the wiki whenever the question is about an item the player actually has, \
-                     or about anything in a modded game. It needs the game to be open. Note the \
-                     names are in the language the game is installed in, which player_status \
-                     reports — search with a word from that language, or with part of a name \
-                     player_status already gave you.",
+                    "Look something up in THIS player's running game, in the game's own words — \
+                     items, weapons, armour, talismans, PLACES and characters. Returns what it \
+                     is called on their screen, the line the menu prints for what it does, and \
+                     its description, read out of the game's memory. Right even for things a \
+                     total conversion invented or renamed, which no wiki and no shipped table \
+                     can be. It needs the game to be open.\n\
+                     \n\
+                     Use it before naming any place or item in your answer when the player is \
+                     not reading English. Translating an English wiki name yourself produces a \
+                     name that is not on their screen: the arena the wiki calls the Wailing \
+                     Dunes is printed in a Russian copy as \"Воющие дюны\", and a sensible \
+                     translation gave \"Стонущие дюны\", which the player had never seen. Names \
+                     come back in the language the game is installed in, which player_status \
+                     reports — search with a word in that language, or part of a name you were \
+                     already given.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -662,6 +787,9 @@ pub struct Player {
     pub mods: Vec<String>,
     /// True when the frame-generation mod is installed.
     pub framegen: bool,
+    /// The language the game is set to, which decides whether a wiki written
+    /// in it is worth reading.
+    pub language: Option<String>,
     /// The character as the running game has them, read on demand.
     ///
     /// A closure rather than a value: reading it copies the game's whole main
@@ -695,6 +823,7 @@ impl Default for Player {
             characters: Vec::new(),
             mods: Vec::new(),
             framegen: false,
+            language: None,
             live: None,
             // Nothing to consult until a caller wires the game in, which is
             // what every test wants and what the browser tab gets.
@@ -739,7 +868,7 @@ async fn run_tool(
             // represented. Straight concatenation meant the first filled every
             // slot and the other might as well not have been searched.
             let mut per_wiki: Vec<Found> = Vec::new();
-            for source in wikis(edition) {
+            for source in reading(edition, player.language.as_deref()) {
                 let index = index_for(app_data, source);
                 let hits: Vec<String> = index
                     .search(query, 6)
@@ -807,7 +936,7 @@ async fn run_tool(
             // them a class, and nothing to say that "Cleric" is a word this
             // game has never used. Naming the miss is what lets a second search
             // be a better one instead of the same one.
-            let unknown: Vec<String> = wikis(edition)
+            let unknown: Vec<String> = reading(edition, player.language.as_deref())
                 .iter()
                 .map(|source| index_for(app_data, source))
                 .fold(None::<Vec<String>>, |missing, index| {
@@ -822,14 +951,28 @@ async fn run_tool(
                 .unwrap_or_default();
 
             let mut out = format!("Articles found:\n{}", lines.join("\n"));
-            if !unknown.is_empty() {
-                out.push_str(&format!(
-                    "\n\nNo article title anywhere contains: {}. Those matched nothing, so the \
-                     results above are only about the rest of the query — if one of them was the \
-                     name of the thing, it is not what this game calls it. Search again with \
-                     another name for it, or with the index page that would list it.",
-                    unknown.join(", ")
-                ));
+            for word in &unknown {
+                // Near misses, offered rather than applied. Spelling a name out
+                // of another alphabet lands close: what the wiki calls Rellana
+                // arrived as "Relanna", and the ranking quietly settled on
+                // Rennala — a different boss with a similar name.
+                let guesses: Vec<String> = reading(edition, player.language.as_deref())
+                    .iter()
+                    .flat_map(|source| index_for(app_data, source).nearest(word, 3))
+                    .collect();
+                if guesses.is_empty() {
+                    out.push_str(&format!(
+                        "\n\nNo article title anywhere contains \"{word}\", and nothing is spelt \
+                         nearly like it. Whatever that names, this game does not call it that."
+                    ));
+                } else {
+                    out.push_str(&format!(
+                        "\n\nNo article title contains \"{word}\". Spelt nearly the same: {}. One \
+                         of those may be the thing, or none may be — check before using one, \
+                         because names this close are often different things.",
+                        guesses.join(", ")
+                    ));
+                }
             }
 
             Ran {
@@ -853,7 +996,7 @@ async fn run_tool(
 
             // Either the one asked for, or whichever has it — the installed
             // edition's first, since that is the game actually being played.
-            let mut order = wikis(edition);
+            let mut order = reading(edition, player.language.as_deref());
             if let Some(which) = which {
                 let wants_mod = which.eq_ignore_ascii_case("convergence");
                 order.sort_by_key(|source| {
@@ -896,8 +1039,33 @@ async fn run_tool(
                     )
                 };
 
+                // What this is called in the player's own game, taken from the
+                // wiki's own translation of itself. Without it a model asked in
+                // Russian translates the English title and gives them a name
+                // that is on no screen anywhere: Redmane Castle came back as
+                // "Крепость Красного Лва" where the game says "Замок Рыжей
+                // Гривы".
+                let theirs = player
+                    .language
+                    .as_deref()
+                    .and_then(short_code)
+                    .and_then(|code| {
+                        crate::wiki::called_in(app_data, source.id, code, &page.title)
+                    })
+                    .map(|local| {
+                        format!(
+                            "\n\nIn this player's game this is called \"{local}\". Use that name \
+                             rather than translating the English one, and put the English beside \
+                             it the first time."
+                        )
+                    })
+                    .unwrap_or_default();
+
                 return Ran {
-                    output: format!("{labelled}\n\n{}{also}", best_window(&text, about, ARTICLE)),
+                    output: format!(
+                        "{labelled}{theirs}\n\n{}{also}",
+                        best_window(&text, about, ARTICLE)
+                    ),
                     note: Some(format!("Reading · {} · {}", page.title, source.name)),
                     source: Some(labelled),
                 };
@@ -1934,6 +2102,34 @@ mod tests {
         assert!(all.unmatched("Blood Initiate").is_empty());
         // Nor are the short words that carry no meaning either way.
         assert!(all.unmatched("what is the Blood Initiate").is_empty());
+    }
+
+    #[test]
+    fn a_name_spelt_nearly_right_gets_the_near_ones_offered() {
+        // Live: "Реллана" was transliterated to "Relanna", which no title
+        // contains — and the ranking quietly settled on "Rennala", a different
+        // boss. The answer that followed was about the wrong character.
+        let all = index(&[
+            "Rellana, Twin Moon Knight",
+            "Rennala, Queen of the Full Moon",
+            "Renna's Rise",
+            "Starscourge Radahn",
+            "Radagon of the Golden Order",
+        ]);
+        assert_eq!(all.unmatched("Where is Relanna"), vec!["Relanna"]);
+
+        let close = all.nearest("Relanna", 3);
+        assert!(close.iter().any(|t| t.contains("Rellana")), "{close:?}");
+
+        // Rennala is offered too. Two letters is all that separates the two
+        // names, and choosing between them is the model's job — which is why
+        // they are handed over labelled as guesses rather than matched.
+        assert!(close.len() >= 2, "{close:?}");
+
+        // A name the wiki does use never reaches this path: it matched, so
+        // there is nothing to guess at. That is what keeps Radahn from being
+        // quietly answered with Radagon, which is also two letters away.
+        assert!(all.unmatched("Where is Radahn").is_empty());
     }
 
     #[test]

@@ -10,8 +10,9 @@
 //! opened and kept from then on, so a page you have read once still opens with
 //! the network off.
 
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -47,10 +48,37 @@ pub const SOURCES: &[WikiSource] = &[
         origin: "https://wiki.convergencemod.com",
         article: "https://wiki.convergencemod.com/",
     },
+    // The same wiki in Russian, and the only place the game's Russian names
+    // are written down as prose.
+    //
+    // A model asked in Russian where a boss is will otherwise translate the
+    // English name itself and produce something the player has never seen —
+    // Redmane Castle came back as "Крепость Красного Лва" where the game says
+    // "Замок Красногривых", and the Wailing Dunes as "Стонущие дюны" where it
+    // says "Воющие дюны". Reading a wiki written in their language is what
+    // stops the guessing.
+    WikiSource {
+        id: "eldenring-ru",
+        name: "ELDEN RING (Russian)",
+        api: "https://eldenring.fandom.com/ru/api.php",
+        origin: "https://eldenring.fandom.com/ru",
+        article: "https://eldenring.fandom.com/ru/wiki/",
+    },
 ];
 
 pub fn source(id: &str) -> Option<&'static WikiSource> {
     SOURCES.iter().find(|s| s.id == id)
+}
+
+/// The language a wiki is written in, when it is written in one in particular.
+///
+/// `None` means English and everybody. A wiki that names a language is only
+/// worth searching for somebody playing in it.
+pub fn spoken_in(source: &WikiSource) -> Option<&'static str> {
+    match source.id {
+        "eldenring-ru" => Some("rus"),
+        _ => None,
+    }
 }
 
 /// The wiki that belongs to whichever edition is loaded.
@@ -415,6 +443,100 @@ async fn get_json(http: &reqwest::Client, url: &str) -> Result<serde_json::Value
         }
     }
     Err(Error::Network(format!("{url}: {last}")))
+}
+
+/// What each article is called in the other languages the wiki is written in.
+///
+/// Telling a model not to translate a name itself is worth nothing unless it
+/// can be given the real one. The wiki keeps that mapping — every article links
+/// to its own translations — so "Redmane Castle" resolves to "Замок Рыжей
+/// Гривы", which is the name printed in a Russian copy of the game. Left to
+/// translate, the model produced "Крепость Красного Лва", which exists nowhere.
+///
+/// Built once alongside the titles, fifty at a time, and read from disk after.
+pub async fn sync_langlinks(
+    http: &reqwest::Client,
+    app_data: &Path,
+    source: &WikiSource,
+    language: &str,
+    mut progress: impl FnMut(usize),
+) -> Result<usize> {
+    let titles = titles(app_data, source.id);
+    let mut found: BTreeMap<String, String> = BTreeMap::new();
+
+    for batch in titles.chunks(50) {
+        let joined = batch
+            .iter()
+            .map(|t| t.as_str())
+            .collect::<Vec<_>>()
+            .join("|");
+        let url = format!(
+            "{}?action=query&prop=langlinks&lllang={language}&lllimit=500&titles={}\
+             &format=json&formatversion=2",
+            source.api,
+            encode(&joined)
+        );
+
+        let Ok(body) = get_json(http, &url).await else {
+            continue;
+        };
+        if let Some(pages) = body
+            .pointer("/query/pages")
+            .and_then(serde_json::Value::as_array)
+        {
+            for page in pages {
+                let (Some(english), Some(links)) = (
+                    page.get("title").and_then(serde_json::Value::as_str),
+                    page.get("langlinks").and_then(serde_json::Value::as_array),
+                ) else {
+                    continue;
+                };
+                if let Some(local) = links
+                    .first()
+                    .and_then(|l| l.get("title"))
+                    .and_then(serde_json::Value::as_str)
+                {
+                    found.insert(english.to_string(), local.to_string());
+                }
+            }
+        }
+        progress(found.len());
+        tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+    }
+
+    let path = names_path(app_data, source.id, language);
+    let text = serde_json::to_string(&found).map_err(|e| Error::Parse {
+        what: "language names".into(),
+        detail: e.to_string(),
+    })?;
+    std::fs::write(&path, text).at(&path)?;
+    Ok(found.len())
+}
+
+fn names_path(app_data: &Path, source: &str, language: &str) -> PathBuf {
+    dir(app_data, source).join(format!("_names-{language}.json"))
+}
+
+/// What an article is called in the player's language, when the wiki says.
+pub fn called_in(app_data: &Path, source: &str, language: &str, title: &str) -> Option<String> {
+    static CACHE: OnceLock<Mutex<HashMap<String, Arc<BTreeMap<String, String>>>>> =
+        OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let key = format!("{source}/{language}");
+
+    let map = {
+        let mut held = cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        held.entry(key)
+            .or_insert_with(|| {
+                let loaded = std::fs::read_to_string(names_path(app_data, source, language))
+                    .ok()
+                    .and_then(|text| serde_json::from_str(&text).ok())
+                    .unwrap_or_default();
+                Arc::new(loaded)
+            })
+            .clone()
+    };
+    map.get(title).cloned()
 }
 
 /// Mirrors every article title, redirects included.

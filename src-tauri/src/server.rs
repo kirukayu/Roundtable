@@ -1215,6 +1215,9 @@ fn player_state(ctx: &Ctx, edition: Option<&str>) -> crate::ask::Player {
     if let Ok(install) = ctx.app.active_install(game) {
         player.version = install.version.clone();
         player.framegen = crate::erss::owns_the_frame_cap(&install.game_dir);
+        // From the game's own configuration rather than from the process, so
+        // it costs a file read and is known before the game is even open.
+        player.language = crate::language::status(&install.game_dir).current;
     }
 
     player.edition = edition.and_then(|id| {
