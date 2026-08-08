@@ -1104,7 +1104,10 @@ async fn run_tool(
                          language the game is installed in — try a shorter piece of the word, \
                          or a word in that language."
                     ),
-                    note: Some(format!("In the game · {name}")),
+                    // Said as a miss, because echoing the query reads as a hit:
+                    // "In the game · Blood Cleric" looked in the log exactly
+                    // like the game having such a thing, and it does not.
+                    note: Some(format!("Not in the game · {name}")),
                     source: None,
                 };
             }
