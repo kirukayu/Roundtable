@@ -119,8 +119,25 @@ mod at {
     pub const FP_MAX: usize = 0x20;
     pub const STAMINA: usize = 0x2c;
     pub const STAMINA_MAX: usize = 0x30;
-    /// Vigor first, Arcane last, four bytes each.
+    /// The attributes as the save holds them: eight, Vigor first, Arcane last.
+    ///
+    /// These are the points the player spent, which is what the level is a sum
+    /// of — so they are what the level check below is done against. They are
+    /// not what the stat screen prints.
     pub const STATS: usize = 0x3c;
+
+    /// The attributes the game prints, which is base plus whatever equipment
+    /// adds.
+    ///
+    /// Nine slots here rather than eight: the fourth is Vitality, unused since
+    /// Dark Souls and always zero. Reading the eight from the save instead
+    /// reported Faith 17 and Arcane 21 at somebody whose screen said 22 and 26,
+    /// because a seal was giving five of each — the sort of confidently wrong
+    /// number that makes every answer built on it wrong too.
+    pub const SHOWN: usize = 0x288;
+    pub const SHOWN_SLOTS: usize = 9;
+    /// The one that is not an attribute.
+    pub const VITALITY: usize = 3;
     pub const LEVEL: usize = 0x68;
     pub const RUNES: usize = 0x6c;
     pub const RUNES_EVER: usize = 0x70;
@@ -128,15 +145,22 @@ mod at {
     pub const NAME: usize = 0x9c;
 }
 
+/// Each attribute with the short form the game prints beside it.
+///
+/// The short form is the part that cannot be misread. A Russian copy labels
+/// Mind "Интеллект(FP)" and Intelligence "Мудрость(INT)", so an answer that
+/// says "Intelligence 9" against a screen reading "Интеллект 13" is talking
+/// about a different attribute and sounds like a mistake. FTH is FTH in every
+/// language the game ships.
 const STAT_NAMES: [&str; 8] = [
-    "Vigor",
-    "Mind",
-    "Endurance",
-    "Strength",
-    "Dexterity",
-    "Intelligence",
-    "Faith",
-    "Arcane",
+    "Vigor (VIG)",
+    "Mind (MND/FP)",
+    "Endurance (END)",
+    "Strength (STR)",
+    "Dexterity (DEX)",
+    "Intelligence (INT)",
+    "Faith (FTH)",
+    "Arcane (ARC)",
 ];
 
 #[derive(Debug, Clone, Serialize)]
@@ -152,7 +176,11 @@ pub struct Live {
     pub fp_max: u32,
     pub stamina: u32,
     pub stamina_max: u32,
+    /// The attributes as the stat screen prints them: what they spent, plus
+    /// whatever they are wearing.
     pub stats: Vec<(String, u32)>,
+    /// The points actually spent, given only when equipment has changed them.
+    pub spent: Option<Vec<(String, u32)>>,
     /// Where they are standing, when the game has a world open.
     pub place: Option<Place>,
     /// What they are holding and wearing, named by the game itself.
@@ -200,7 +228,9 @@ pub fn read(game: Game) -> Option<Live> {
 
     let manager = pointer(&process, slot)?;
     let data = pointer(&process, manager + 0x08)?;
-    let block = process.read(data, 0x100);
+    // Far enough to reach the printed attributes, which sit well past the ones
+    // the save holds.
+    let block = process.read(data, 0x300);
 
     let mut live = parse_block(&block)?;
     live.place = where_they_are(&process, &image, base);
@@ -336,6 +366,11 @@ fn parse_block(block: &[u8]) -> Option<Live> {
         return None;
     }
 
+    // What the stat screen prints, when it can be read. Equipment moves these
+    // and the player is looking at the moved numbers, so an answer built on the
+    // spent points is answering about a character they do not have.
+    let shown = worn_in(block).unwrap_or(stats.clone());
+
     Some(Live {
         name: name(block),
         level,
@@ -349,12 +384,49 @@ fn parse_block(block: &[u8]) -> Option<Live> {
         stamina_max: word(at::STAMINA_MAX)?,
         stats: STAT_NAMES
             .iter()
-            .zip(stats)
+            .zip(shown.iter().copied())
             .map(|(what, value)| ((*what).to_string(), value))
             .collect(),
+        // Only worth saying when equipment has actually moved something.
+        spent: (shown != stats).then(|| {
+            STAT_NAMES
+                .iter()
+                .zip(stats)
+                .map(|(what, value)| ((*what).to_string(), value))
+                .collect()
+        }),
         place: None,
         gear: None,
     })
+}
+
+/// The attributes with equipment counted in, as the stat screen prints them.
+///
+/// Nine slots with Vitality in the middle, which the game has kept and not used
+/// since Dark Souls. Refused rather than guessed at when the shape is wrong:
+/// falling back to the spent points is a number that is merely incomplete,
+/// where a misread one is a number that is false.
+fn worn_in(block: &[u8]) -> Option<Vec<u32>> {
+    let word = |at: usize| -> Option<u32> {
+        Some(u32::from_le_bytes(block.get(at..at + 4)?.try_into().ok()?))
+    };
+
+    let mut shown = Vec::with_capacity(8);
+    for slot in 0..at::SHOWN_SLOTS {
+        let value = word(at::SHOWN + slot * 4)?;
+        if slot == at::VITALITY {
+            // The unused one. Anything in it means this is not the block.
+            if value != 0 {
+                return None;
+            }
+            continue;
+        }
+        if !(1..=198).contains(&value) {
+            return None;
+        }
+        shown.push(value);
+    }
+    Some(shown)
 }
 
 fn name(block: &[u8]) -> String {
@@ -381,12 +453,21 @@ fn pointer(process: &crate::unlock::win::Process, at: usize) -> Option<usize> {
 mod tests {
     use super::*;
 
-    /// The block as a running game had it: level 34, "Way Of Life", 643 of 690.
+    /// The block as a running game had it: level 34, "Way Of Life", 643 of 690,
+    /// wearing a seal worth five Faith and five Arcane.
+    ///
+    /// Both sets of attributes, because the difference between them is the bug
+    /// this file exists to have got wrong once: the save says 17 and 21, the
+    /// stat screen said 22 and 26, and the launcher reported the save.
     fn real() -> Vec<u8> {
-        let mut block = vec![0u8; 0x100];
+        let mut block = vec![0u8; 0x300];
         let mut put = |at: usize, value: u32| {
             block[at..at + 4].copy_from_slice(&value.to_le_bytes());
         };
+        // What the screen prints, with the unused Vitality slot left at zero.
+        for (slot, value) in [18u32, 13, 11, 0, 10, 14, 9, 22, 26].iter().enumerate() {
+            put(at::SHOWN + slot * 4, *value);
+        }
         put(at::HP, 643);
         put(at::HP_MAX, 690);
         put(at::FP, 113);
@@ -413,8 +494,64 @@ mod tests {
         assert_eq!(live.level, 34);
         assert_eq!(live.runes, 3501);
         assert_eq!((live.hp, live.hp_max), (643, 690));
-        assert_eq!(live.stats[0], ("Vigor".into(), 18));
-        assert_eq!(live.stats[7], ("Arcane".into(), 21));
+        assert_eq!(live.stats[0].1, 18);
+        assert_eq!(live.stats[7].1, 26, "the screen said 26, not the save's 21");
+    }
+
+    #[test]
+    fn the_attributes_reported_are_the_ones_on_the_screen() {
+        // A seal was giving five Faith and five Arcane, so the save said 17 and
+        // 21 while the player was looking at 22 and 26. Reporting the save made
+        // every answer built on it wrong, and sounded just as certain.
+        let live = parse_block(&real()).unwrap();
+        let by = |what: &str| live.stats.iter().find(|(n, _)| n.contains(what)).unwrap().1;
+        assert_eq!(by("FTH"), 22);
+        assert_eq!(by("ARC"), 26);
+
+        // The points they actually spent are kept, since that is what the level
+        // is a sum of and what respeccing would move.
+        let spent = live.spent.expect("equipment moved them, so both are known");
+        let base = |what: &str| spent.iter().find(|(n, _)| n.contains(what)).unwrap().1;
+        assert_eq!(base("FTH"), 17);
+        assert_eq!(base("ARC"), 21);
+        assert_eq!(base("VIG"), 18, "an attribute nothing touched reads the same");
+    }
+
+    #[test]
+    fn attributes_nothing_has_moved_are_reported_once() {
+        // No equipment bonus, so there is no second set to explain.
+        let mut plain = real();
+        for (slot, value) in [18u32, 13, 11, 0, 10, 14, 9, 17, 21].iter().enumerate() {
+            plain[at::SHOWN + slot * 4..at::SHOWN + slot * 4 + 4]
+                .copy_from_slice(&value.to_le_bytes());
+        }
+        let live = parse_block(&plain).unwrap();
+        assert!(live.spent.is_none());
+        assert_eq!(live.stats[6].1, 17);
+    }
+
+    #[test]
+    fn a_short_read_falls_back_to_the_points_that_were_spent() {
+        // Incomplete beats false: a block that stops before the printed
+        // attributes gives the save's, which are at least a character's.
+        let short = real()[..0x100].to_vec();
+        let live = parse_block(&short).expect("the save's attributes are in reach");
+        assert_eq!(live.stats[7].1, 21);
+        assert!(live.spent.is_none());
+    }
+
+    #[test]
+    fn every_attribute_says_which_one_it_is_in_any_language() {
+        // A Russian copy labels Mind "Интеллект(FP)" and Intelligence
+        // "Мудрость(INT)". Answering "Intelligence 9" against a screen reading
+        // "Интеллект 13" names a different attribute and reads as an error, so
+        // each carries the short form, which does not translate.
+        for short in ["VIG", "MND", "END", "STR", "DEX", "INT", "FTH", "ARC"] {
+            assert!(
+                STAT_NAMES.iter().any(|name| name.contains(short)),
+                "no attribute is marked {short}"
+            );
+        }
     }
 
     #[test]

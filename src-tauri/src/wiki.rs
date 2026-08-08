@@ -417,7 +417,17 @@ async fn get_json(http: &reqwest::Client, url: &str) -> Result<serde_json::Value
     Err(Error::Network(format!("{url}: {last}")))
 }
 
-/// Mirrors every article title. This is what makes search cover the whole wiki.
+/// Mirrors every article title, redirects included.
+///
+/// The redirects are the point of taking them. A wiki keeps its own list of the
+/// other names for a thing — "Bleed", "Hemorrhage" and "Bleeding" all standing
+/// for "Blood Loss" — and that list is exactly the table of synonyms this
+/// launcher refuses to write by hand, kept up to date by people who play the
+/// game. Without them a search for a bleed build found nothing at all, because
+/// the game's own word for it is blood loss and nothing else was indexed.
+///
+/// Reading one costs nothing extra: the fetch already asks the wiki to follow
+/// redirects, so opening "Bleed" returns the Blood Loss article.
 pub async fn sync_titles(
     http: &reqwest::Client,
     app_data: &Path,
@@ -432,7 +442,7 @@ pub async fn sync_titles(
 
     loop {
         let mut url = format!(
-            "{}?action=query&list=allpages&aplimit=500&apfilterredir=nonredirects&format=json&formatversion=2",
+            "{}?action=query&list=allpages&aplimit=500&apfilterredir=all&format=json&formatversion=2",
             source.api
         );
         if let Some(from) = &cont {

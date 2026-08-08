@@ -158,6 +158,22 @@ fn capitalised(query: &str) -> Vec<String> {
     found
 }
 
+/// What two titles share when they name the same article.
+///
+/// Case, punctuation and a plural are all a redirect ever changes, so stripping
+/// those is enough to tell one thing under several names from several things.
+fn one_thing(title: &str) -> String {
+    let mut key: String = title
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .collect();
+    if key.len() > 3 && key.ends_with('s') {
+        key.pop();
+    }
+    key
+}
+
 /// The length at which a word is long enough to stand for what follows it.
 ///
 /// Below this a query word only matches itself. Four is where "boss" still
@@ -212,6 +228,42 @@ impl Index {
         (total / count).ln().max(0.0)
     }
 
+    /// The names in a query that appear in no title at all.
+    ///
+    /// Names only — a word written with a capital letter, which is what the
+    /// thing being asked about looks like. Every word would be noise: "what"
+    /// and "best" are missing from most wikis' titles and their absence says
+    /// nothing. A capitalised word that is nowhere says the name is wrong.
+    ///
+    /// The first word is skipped, because a sentence capitalises it whatever it
+    /// is. Reported as the reader wrote them, since that is what has to be
+    /// recognised as the mistake.
+    pub fn unmatched(&self, query: &str) -> Vec<String> {
+        let mut missing = Vec::new();
+        let words: Vec<&str> = query
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| !w.is_empty())
+            .collect();
+        for word in words.into_iter().skip(1) {
+            let lower = word.to_lowercase();
+            if lower.chars().count() < MEANINGFUL {
+                continue;
+            }
+            if !word.chars().next().is_some_and(char::is_uppercase) {
+                continue;
+            }
+            let forms: Vec<String> = translit(&lower).into_iter().chain([lower]).collect();
+            let known = forms.iter().any(|form| {
+                self.seen.keys().any(|known| same_word(known, form))
+                    || self.titles.iter().any(|t| t.to_lowercase().contains(form.as_str()))
+            });
+            if !known && !missing.contains(&word.to_string()) {
+                missing.push(word.to_string());
+            }
+        }
+        missing
+    }
+
     /// Titles worth reading for this query, best first.
     pub fn search(&self, query: &str, limit: usize) -> Vec<(f32, &String)> {
         let mut wanted: Vec<String> = Vec::new();
@@ -237,6 +289,9 @@ impl Index {
         let named = capitalised(query);
         let weights: Vec<(String, f32)> =
             wanted.iter().map(|w| (w.clone(), self.weight(w))).collect();
+        // What the whole question is worth, to judge how much of it a title
+        // actually answers.
+        let asked: f32 = weights.iter().map(|(_, w)| w.max(0.0)).sum::<f32>().max(1.0);
 
         let mut hits: Vec<(f32, &String)> = self
             .titles
@@ -270,6 +325,7 @@ impl Index {
 
                 let mut score = 0.0f32;
                 let mut matched = 0usize;
+                let mut covered = 0.0f32;
                 let mut has_a_name = false;
 
                 for (word, weight) in &weights {
@@ -278,12 +334,18 @@ impl Index {
                     }
                     let at = parts.iter().position(|part| same_word(part, word));
                     let Some(at) = at else {
-                        if lower.contains(word.as_str()) {
+                        // Buried inside a longer word, which is worth something
+                        // for a real word and nothing at all for a fragment:
+                        // the Russian "за" is two letters that fall inside
+                        // Salza, Zamor and Wakizashi, and a question asked in
+                        // Russian came back as a list of names ending in -za.
+                        if word.chars().count() >= MEANINGFUL && lower.contains(word.as_str()) {
                             score += weight * 0.25;
                         }
                         continue;
                     };
                     matched += 1;
+                    covered += weight;
                     score += weight;
                     if named.contains(word) {
                         has_a_name = true;
@@ -306,9 +368,13 @@ impl Index {
                 if matched == 0 && score <= 0.0 {
                     return None;
                 }
-                // Every word matched is worth more than the sum of its parts:
-                // a title that covers the whole query is what was asked for.
-                score *= 1.0 + 0.25 * (matched.saturating_sub(1) as f32);
+                // Covering the query is worth more than the sum of its parts —
+                // but measured by what was covered, not by how many words.
+                //
+                // Counting them rewarded a title for matching junk: "what does
+                // arcane do" put "What Do You Want?" above "Arcane", two empty
+                // words beating the one that carried the question.
+                score *= 1.0 + 0.5 * (covered / asked);
 
                 // A subpage is a fragment of an article, not an article. A page
                 // of raw dialogue lines answers almost nothing on its own.
@@ -332,6 +398,25 @@ impl Index {
             .collect();
 
         hits.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.len().cmp(&b.1.len())));
+
+        // One thing, once.
+        //
+        // The index carries the wiki's redirects so that a search for a bleed
+        // build reaches blood loss, and the cost of that is families of near
+        // identical names: "Sacred Flask", "Sacred Flasks" and "Sacred flasks"
+        // are one article under three titles, and left alone they took three of
+        // the six answers and pushed "Sacred Tear" — the page actually being
+        // asked for — off the end.
+        let mut already: Vec<String> = Vec::new();
+        hits.retain(|(_, title)| {
+            let key = one_thing(title);
+            if already.contains(&key) {
+                return false;
+            }
+            already.push(key);
+            true
+        });
+
         hits.truncate(limit);
         hits
     }
@@ -713,8 +798,42 @@ async fn run_tool(
                     source: None,
                 };
             }
+            // Which of the query's own words no title anywhere contains.
+            //
+            // Without this the search looks like it worked when it did not: a
+            // question about the mod's Blood Initiate class, asked in Russian
+            // and translated by the model to "Blood Cleric", came back with
+            // Blood, Bloodboon, Bloodrose and Bloodflame — six titles, none of
+            // them a class, and nothing to say that "Cleric" is a word this
+            // game has never used. Naming the miss is what lets a second search
+            // be a better one instead of the same one.
+            let unknown: Vec<String> = wikis(edition)
+                .iter()
+                .map(|source| index_for(app_data, source))
+                .fold(None::<Vec<String>>, |missing, index| {
+                    let here = index.unmatched(query);
+                    Some(match missing {
+                        None => here,
+                        Some(before) => {
+                            before.into_iter().filter(|w| here.contains(w)).collect()
+                        }
+                    })
+                })
+                .unwrap_or_default();
+
+            let mut out = format!("Articles found:\n{}", lines.join("\n"));
+            if !unknown.is_empty() {
+                out.push_str(&format!(
+                    "\n\nNo article title anywhere contains: {}. Those matched nothing, so the \
+                     results above are only about the rest of the query — if one of them was the \
+                     name of the thing, it is not what this game calls it. Search again with \
+                     another name for it, or with the index page that would list it.",
+                    unknown.join(", ")
+                ));
+            }
+
             Ran {
-                output: format!("Articles found:\n{}", lines.join("\n")),
+                output: out,
                 note: Some(format!("Searching · {query}")),
                 source: None,
             }
@@ -916,12 +1035,25 @@ async fn run_tool(
                     "  {}/{} HP, {}/{} FP, {}/{} stamina\n",
                     live.hp, live.hp_max, live.fp, live.fp_max, live.stamina, live.stamina_max
                 ));
-                let stats: Vec<String> = live
-                    .stats
-                    .iter()
-                    .map(|(what, value)| format!("{what} {value}"))
-                    .collect();
-                out.push_str(&format!("  {}\n", stats.join(", ")));
+                let listed = |stats: &[(String, u32)]| -> String {
+                    stats
+                        .iter()
+                        .map(|(what, value)| format!("{what} {value}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                };
+                out.push_str(&format!("  {}\n", listed(&live.stats)));
+                if let Some(spent) = &live.spent {
+                    // Equipment has moved something, so both numbers are worth
+                    // having: the first is what their screen says and what any
+                    // requirement is met against, the second is what they spent
+                    // and what they would keep if they took the item off.
+                    out.push_str(&format!(
+                        "  Those are the numbers on their stat screen. Without their equipment, \
+                         the points they have actually spent are: {}\n",
+                        listed(spent)
+                    ));
+                }
                 if let Some(place) = &live.place {
                     out.push_str(&format!(
                         "  Standing in: {} — map {}, at {:.0}, {:.0}, {:.0}\n",
@@ -1781,6 +1913,27 @@ mod tests {
         // title.
         let russian = capitalised("Как убить Малению");
         assert!(russian.iter().any(|w| w.starts_with("malen")), "{russian:?}");
+    }
+
+    #[test]
+    fn a_word_this_game_has_never_used_is_named_as_missing() {
+        // The failure this exists for. Asked in Russian about the mod's Blood
+        // Initiate class, the model translated it to "Blood Cleric" — a word
+        // the game does not use — and the search answered with Blood,
+        // Bloodboon, Bloodrose: six titles, no class, and nothing to say the
+        // name was wrong. A second search then repeated the first.
+        let all = index(&[
+            "Blood Initiate",
+            "Bloodboon",
+            "Bloodrose",
+            "Classes",
+            "Starscourge Radahn",
+        ]);
+        assert_eq!(all.unmatched("Blood Cleric class"), vec!["Cleric"]);
+        // A name the wiki does use is not reported.
+        assert!(all.unmatched("Blood Initiate").is_empty());
+        // Nor are the short words that carry no meaning either way.
+        assert!(all.unmatched("what is the Blood Initiate").is_empty());
     }
 
     #[test]
