@@ -2314,7 +2314,14 @@ html.overlay-window #root {
     radial-gradient(90% 40% at 50% -8%, rgba(255, 255, 255, 0.085), transparent 60%),
     radial-gradient(80% 30% at 50% 104%, rgba(255, 255, 255, 0.05), transparent 60%),
     linear-gradient(180deg, rgba(23, 23, 23, 0.97), rgba(7, 7, 7, 0.98));
-  box-shadow: var(--sh-3), 0 0 0 1px rgba(0, 0, 0, 0.55);
+  /*
+   * No drop shadow.
+   *
+   * A shadow needs something to fall on, and there is nothing here — the window
+   * is transparent, so it lands on the game instead and drags a grey smear
+   * around the column that moves with it. The one-pixel border above is what
+   * separates the shape from what is behind it.
+   */
   /* The game shows through, faintly. It is an overlay, not a window on top. */
   backdrop-filter: blur(20px) saturate(0.6);
 }

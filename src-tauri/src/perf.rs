@@ -855,7 +855,7 @@ pub fn bounce_refresh() -> Result<String> {
             ));
         };
 
-        let mut apply = |hz: u32| -> i32 {
+        let apply = |hz: u32| -> i32 {
             let mut mode = current;
             mode.dmDisplayFrequency = hz;
             mode.dmFields = DM_DISPLAYFREQUENCY;

@@ -26,6 +26,7 @@ pub mod server;
 pub mod settings;
 pub mod steam;
 pub mod sys;
+pub mod text;
 pub mod tune;
 pub mod unlock;
 pub mod wiki;
@@ -198,6 +199,36 @@ pub fn centre_overlay() {
     });
 }
 
+/// How long the window stays up after the page has been told it is going.
+///
+/// Long enough for a short exit, short enough that the key still feels like a
+/// switch. Without the pause the window is gone in the same frame it is told,
+/// and the animation is written but never seen.
+const LEAVING: std::time::Duration = std::time::Duration::from_millis(170);
+
+/// Tells the overlay page what is happening to the window around it.
+///
+/// A DOM event rather than one of Tauri's, because the same page is also served
+/// to a browser tab where Tauri's event bus does not exist. There these never
+/// arrive and the page behaves as it always did.
+///
+/// This is the only way the page can know: the window is hidden and shown
+/// rather than built and destroyed, so nothing unmounts and nothing remounts,
+/// and every opening after the first would otherwise appear with no animation
+/// at all.
+fn tell_overlay(window: &tauri::WebviewWindow, what: &str) {
+    let _ = window.eval(format!("window.dispatchEvent(new Event('roundtable:{what}'))"));
+}
+
+/// Plays the page's exit, then takes the window away.
+fn leave_overlay(window: tauri::WebviewWindow) {
+    tell_overlay(&window, "leaving");
+    std::thread::spawn(move || {
+        std::thread::sleep(LEAVING);
+        let _ = window.hide();
+    });
+}
+
 /// Shows the overlay, building it the first time it is asked for.
 ///
 /// It is a Tauri window rather than the browser the rest of the interface runs
@@ -218,6 +249,7 @@ fn show_overlay(app: &tauri::AppHandle) -> Result<(), String> {
         let _ = window.show();
         let _ = window.set_always_on_top(true);
         let _ = window.set_focus();
+        tell_overlay(&window, "shown");
         return Ok(());
     }
 
@@ -275,7 +307,7 @@ fn overlay_toggle(app: tauri::AppHandle) -> Result<(), String> {
         Some(window)
             if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) =>
         {
-            let _ = window.hide();
+            leave_overlay(window);
             Ok(())
         }
         _ => show_overlay(&app),

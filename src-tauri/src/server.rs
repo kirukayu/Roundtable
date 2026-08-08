@@ -1266,6 +1266,19 @@ fn player_state(ctx: &Ctx, edition: Option<&str>) -> crate::ask::Player {
 
     // What the running game says, read only if the model asks for it.
     player.live = Some(Box::new(move || crate::live::read(game)));
+    player.catalogue = Box::new(move |query| {
+        crate::text::look_up(game, query, 6).map(|found| {
+            found
+                .into_iter()
+                .map(|item| crate::ask::Catalogued {
+                    what: item.kind.what().to_string(),
+                    name: item.name,
+                    effect: item.effect,
+                    caption: item.caption,
+                })
+                .collect()
+        })
+    });
 
     player
 }

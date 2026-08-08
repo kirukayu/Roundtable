@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion, useAnimationControls } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "../lib/ipc";
@@ -37,6 +37,20 @@ interface Said {
 /** Kept out of the reply that follows, so the model is not quoting itself. */
 const REMEMBERED = 3;
 
+/** Rising into place: slow out of the gate, settling rather than stopping. */
+const ENTER = { duration: 0.42, ease: [0.16, 1, 0.3, 1] } as const;
+
+/**
+ * Going: quicker, and into the motion rather than out of it.
+ *
+ * Shorter than the entrance because leaving should feel like a decision that
+ * has already been made. It has to finish inside the pause the window gives it.
+ */
+const LEAVE = { duration: 0.15, ease: [0.4, 0, 1, 1] } as const;
+
+const OFF_SCREEN = { opacity: 0, y: 16, scale: 0.985 } as const;
+const IN_PLACE = { opacity: 1, y: 0, scale: 1 } as const;
+
 export function Overlay() {
   const [question, setQuestion] = useState("");
   const [stage, setStage] = useState<Stage>("idle");
@@ -46,6 +60,7 @@ export function Overlay() {
   const field = useRef<HTMLInputElement>(null);
   const thread = useRef<HTMLDivElement>(null);
   const asking = useRef<AbortController | null>(null);
+  const column = useAnimationControls();
 
   // The window is shown and hidden rather than built each time, so focus has to
   // be taken every time it comes back rather than once on mount.
@@ -56,14 +71,42 @@ export function Overlay() {
     return () => window.removeEventListener("focus", focus);
   }, []);
 
-  const dismiss = useCallback(() => {
+  /**
+   * Arriving and leaving, played on demand rather than on mount.
+   *
+   * Nothing here ever unmounts — the window is hidden and shown around a page
+   * that stays loaded — so an `initial` prop animates exactly once, the first
+   * time the overlay is opened after the app starts. Every opening after that
+   * used to blink into place. The window says when it is shown and when it is
+   * about to go, and the animation is driven from those.
+   */
+  useEffect(() => {
+    const entering = () => {
+      column.set(OFF_SCREEN);
+      void column.start({ ...IN_PLACE, transition: ENTER });
+      field.current?.focus();
+    };
+    const leaving = () => void column.start({ ...OFF_SCREEN, transition: LEAVE });
+
+    entering();
+    window.addEventListener("roundtable:shown", entering);
+    window.addEventListener("roundtable:leaving", leaving);
+    return () => {
+      window.removeEventListener("roundtable:shown", entering);
+      window.removeEventListener("roundtable:leaving", leaving);
+    };
+  }, [column]);
+
+  // Out of the way first, gone second. The window waits for this.
+  const dismiss = useCallback(async () => {
     asking.current?.abort();
+    await column.start({ ...OFF_SCREEN, transition: LEAVE });
     void api.overlayHide();
-  }, []);
+  }, [column]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") dismiss();
+      if (event.key === "Escape") void dismiss();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -166,12 +209,7 @@ export function Overlay() {
 
   return (
     <div className="ov">
-      <motion.div
-        className="ov__column"
-        initial={{ opacity: 0, y: 18, scale: 0.98 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.44, ease: [0.16, 1, 0.3, 1] }}
-      >
+      <motion.div className="ov__column" initial={OFF_SCREEN} animate={column}>
         {/* A slow sheen down the edge, the same one the site uses. */}
         <div className="ov__sheen" aria-hidden />
 
@@ -187,7 +225,7 @@ export function Overlay() {
             type="button"
             className="ov__close"
             onPointerDown={(event) => event.stopPropagation()}
-            onClick={dismiss}
+            onClick={() => void dismiss()}
             aria-label="Close"
           >
             <svg viewBox="0 0 24 24" width={12} height={12} aria-hidden>

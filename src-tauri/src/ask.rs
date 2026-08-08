@@ -426,6 +426,36 @@ fn tool_schemas() -> serde_json::Value {
         {
             "type": "function",
             "function": {
+                "name": "game_item",
+                "description":
+                    "Look something up in THIS player's running game, in the game's own words. \
+                     Returns what the item is called on their screen, the line the menu prints \
+                     for what it does, and its description — read out of the game's memory, so \
+                     it is right even for items a total conversion invented or renamed, which \
+                     no wiki and no shipped table can be. Prefer this over item_stats and over \
+                     the wiki whenever the question is about an item the player actually has, \
+                     or about anything in a modded game. It needs the game to be open. Note the \
+                     names are in the language the game is installed in, which player_status \
+                     reports — search with a word from that language, or with part of a name \
+                     player_status already gave you.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description":
+                                "Part of the item's name, in the game's own language. Part of \
+                                 one is enough and often better: a stem matches the whole \
+                                 family, where a full name with the wrong ending matches nothing."
+                        }
+                    },
+                    "required": ["name"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "read_article",
                 "description":
                     "Read a wiki article. Use a title exactly as search_wiki returned it. \
@@ -497,7 +527,6 @@ struct Ran {
 /// Passed in rather than reached for, so the whole of this file can be tested
 /// without a game installed and so nothing here can wander into state it was
 /// not given.
-#[derive(Default)]
 pub struct Player {
     /// The game's own version, from the executable.
     pub version: Option<String>,
@@ -516,6 +545,38 @@ pub struct Player {
     /// real time. Almost no question needs it, and gathering it up front made
     /// every question pay for the few that do.
     pub live: Option<Box<dyn Fn() -> Option<crate::live::Live> + Send + Sync>>,
+    /// The running game's own catalogue, asked by name.
+    ///
+    /// A closure for the same reason as `live`, and more so: answering means
+    /// walking every name table the game has loaded, which is ten thousand
+    /// strings. Almost no question needs it and every question would pay.
+    pub catalogue: Box<dyn Fn(&str) -> Option<Vec<Catalogued>> + Send + Sync>,
+}
+
+/// One entry as the running game describes it.
+#[derive(Debug, Clone)]
+pub struct Catalogued {
+    pub name: String,
+    /// Weapon, armour, talisman, item.
+    pub what: String,
+    pub effect: Option<String>,
+    pub caption: Option<String>,
+}
+
+impl Default for Player {
+    fn default() -> Self {
+        Player {
+            version: None,
+            edition: None,
+            characters: Vec::new(),
+            mods: Vec::new(),
+            framegen: false,
+            live: None,
+            // Nothing to consult until a caller wires the game in, which is
+            // what every test wants and what the browser tab gets.
+            catalogue: Box::new(|_| None),
+        }
+    }
 }
 
 impl std::fmt::Debug for Player {
@@ -693,6 +754,52 @@ async fn run_tool(
             }
         }
 
+        "game_item" => {
+            let name = args.get("name").and_then(|v| v.as_str()).unwrap_or_default();
+            if name.trim().is_empty() {
+                return Ran { output: "No name given.".into(), note: None, source: None };
+            }
+
+            let Some(hits) = (player.catalogue)(name) else {
+                return Ran {
+                    output: "The game is not open, so its own text cannot be read. Use the \
+                             wiki, and say that the figures are the base game's if a total \
+                             conversion is installed."
+                        .into(),
+                    note: None,
+                    source: None,
+                };
+            };
+
+            if hits.is_empty() {
+                return Ran {
+                    output: format!(
+                        "Nothing in the running game is called \"{name}\". The names are in the \
+                         language the game is installed in — try a shorter piece of the word, \
+                         or a word in that language."
+                    ),
+                    note: Some(format!("In the game · {name}")),
+                    source: None,
+                };
+            }
+
+            let mut out = String::from(
+                "From the running game itself — these are this player's own copy, mod and all:\n",
+            );
+            for hit in &hits {
+                out.push_str(&format!("\n{} ({})\n", hit.name, hit.what));
+                if let Some(effect) = &hit.effect {
+                    out.push_str(&format!("  Does: {effect}\n"));
+                }
+                if let Some(caption) = &hit.caption {
+                    out.push_str(&format!("  {caption}\n"));
+                }
+            }
+
+            let note = format!("In the game · {}", hits[0].name);
+            Ran { output: out, note: Some(note), source: Some("the running game".into()) }
+        }
+
         "item_stats" => {
             let name = args.get("name").and_then(|v| v.as_str()).unwrap_or_default();
             let kind = args.get("kind").and_then(|v| v.as_str()).filter(|k| !k.is_empty());
@@ -786,6 +893,32 @@ async fn run_tool(
                         place.z
                     ));
                 }
+
+                // Named by the game rather than by a table, so these are the
+                // words on the player's own screen — including anything a total
+                // conversion renamed, and in the language they installed.
+                if let Some(gear) = &live.gear {
+                    if !gear.weapons.is_empty() {
+                        out.push_str(&format!("  Holding: {}\n", gear.weapons.join(", ")));
+                    }
+                    if !gear.armour.is_empty() {
+                        let worn: Vec<String> = gear
+                            .armour
+                            .iter()
+                            .map(|(slot, piece)| format!("{slot} {piece}"))
+                            .collect();
+                        out.push_str(&format!("  Wearing: {}\n", worn.join(", ")));
+                    }
+                    out.push_str(&match gear.talismans.is_empty() {
+                        true => "  No talismans equipped.\n".to_string(),
+                        false => format!("  Talismans: {}\n", gear.talismans.join(", ")),
+                    });
+                    out.push_str(
+                        "  (Those names are the game's own, so they are in the language it is \
+                         installed in and account for any mod. game_item looks up more about \
+                         any of them.)\n",
+                    );
+                }
                 out.push('\n');
             }
 
@@ -802,15 +935,25 @@ async fn run_tool(
                 out.push_str("No save file found, so no characters to report.\n");
             } else {
                 out.push_str(if live.is_some() {
-                    "In the save, which is as of their last rest and may be a different slot:\n"
+                    "In the save, as of their last rest. A save holds several slots; the one \
+                     marked below is the character in the running game. The others are old \
+                     characters and are not who the question is about:\n"
                 } else {
                     "Characters, from the save file — the game is not running, so this is \
                      where they were when they last rested:\n"
                 });
                 for (name, level, seconds) in &player.characters {
+                    // Which slot they are actually in is the thing the save
+                    // cannot say: it holds every character they ever made, and
+                    // answering about a retired one reads as the launcher not
+                    // knowing them at all.
+                    let playing = live
+                        .as_ref()
+                        .is_some_and(|live| live.name.trim().eq_ignore_ascii_case(name.trim()));
                     out.push_str(&format!(
-                        "  {name} — level {level}, {} hours played\n",
-                        seconds / 3600
+                        "  {name} — level {level}, {} hours played{}\n",
+                        seconds / 3600,
+                        if playing { "   <- playing this one" } else { "" }
                     ));
                 }
             }
@@ -1568,7 +1711,13 @@ mod tests {
             .iter()
             .filter_map(|t| t["function"]["name"].as_str())
             .collect();
-        for wanted in ["search_wiki", "read_article", "item_stats", "player_status"] {
+        for wanted in [
+            "search_wiki",
+            "read_article",
+            "item_stats",
+            "player_status",
+            "game_item",
+        ] {
             assert!(names.contains(&wanted), "{wanted} is not offered: {names:?}");
         }
 
@@ -1580,7 +1729,11 @@ mod tests {
             .filter(|name| {
                 !matches!(
                     **name,
-                    "search_wiki" | "read_article" | "item_stats" | "player_status"
+                    "search_wiki"
+                        | "read_article"
+                        | "item_stats"
+                        | "player_status"
+                        | "game_item"
                 )
             })
             .collect();

@@ -93,6 +93,27 @@ pub fn place(map: u32) -> Option<String> {
     None
 }
 
+/// What they are wearing and holding, as offsets into the player's block.
+///
+/// Found by asking the game to name every number in the block and keeping the
+/// ones it recognised — a run of six that name weapons, then four that name
+/// armour, then four that name talismans, with the empty slots reading as -1
+/// between them. A layout that names itself is a layout that cannot be off by
+/// one.
+mod gear {
+    pub const WEAPONS: usize = 0x398;
+    pub const WEAPON_SLOTS: usize = 6;
+    pub const ARMOUR: usize = 0x3c8;
+    pub const TALISMANS: usize = 0x3d8;
+    pub const TALISMAN_SLOTS: usize = 4;
+    /// The id the game uses for a hand with nothing in it.
+    pub const BARE: u32 = 110_000;
+}
+
+/// Head, body, arms, legs — in that order, and the ids say so themselves: a set
+/// is one number with 000, 100, 200 and 300 added to it.
+const ARMOUR_SLOTS: [&str; 4] = ["Head", "Body", "Arms", "Legs"];
+
 /// Verified against a live 1.16.1 (executable 2.6.1.0).
 mod at {
     pub const HP: usize = 0x10;
@@ -137,6 +158,23 @@ pub struct Live {
     pub stats: Vec<(String, u32)>,
     /// Where they are standing, when the game has a world open.
     pub place: Option<Place>,
+    /// What they are holding and wearing, named by the game itself.
+    pub gear: Option<Gear>,
+}
+
+/// Equipment, in the game's own words.
+///
+/// Names rather than numbers, and the game's names rather than a table's: a
+/// total conversion renames things, and the player is reading its names off
+/// their screen while they ask.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Gear {
+    /// Everything in hand, empty hands left out.
+    pub weapons: Vec<String>,
+    /// Slot and what is in it, missing pieces left out.
+    pub armour: Vec<(String, String)>,
+    pub talismans: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -169,7 +207,60 @@ pub fn read(game: Game) -> Option<Live> {
 
     let mut live = parse_block(&block)?;
     live.place = where_they_are(&process, &image, base);
+    live.gear = crate::text::Text::open(&process, &image, base)
+        .and_then(|text| what_they_carry(&process, &text, data));
     Some(live)
+}
+
+/// What is in their hands and on their back.
+///
+/// Every id is put to the game to be named, and one that does not name is left
+/// out rather than printed as a number — a slot the layout got wrong then shows
+/// up as nothing, which is the failure worth having.
+fn what_they_carry(
+    process: &crate::unlock::win::Process,
+    text: &crate::text::Text,
+    data: usize,
+) -> Option<Gear> {
+    use crate::text::Kind;
+
+    let block = process.read(data + gear::WEAPONS, 0x50);
+    let id = |at: usize| -> Option<u32> {
+        let value = u32::from_le_bytes(block.get(at..at + 4)?.try_into().ok()?);
+        (value != 0 && value != u32::MAX && value != gear::BARE).then_some(value)
+    };
+    let from = |base: usize| base - gear::WEAPONS;
+
+    let mut carried = Gear::default();
+
+    for slot in 0..gear::WEAPON_SLOTS {
+        if let Some(name) = id(slot * 4).and_then(|value| text.name(Kind::Weapon, value)) {
+            // Both hands can hold the same weapon, and saying it twice reads as
+            // a mistake rather than as two of them.
+            if !carried.weapons.contains(&name) {
+                carried.weapons.push(name);
+            }
+        }
+    }
+
+    for (slot, what) in ARMOUR_SLOTS.iter().enumerate() {
+        if let Some(name) =
+            id(from(gear::ARMOUR) + slot * 4).and_then(|value| text.name(Kind::Armour, value))
+        {
+            carried.armour.push(((*what).to_string(), name));
+        }
+    }
+
+    for slot in 0..gear::TALISMAN_SLOTS {
+        if let Some(name) =
+            id(from(gear::TALISMANS) + slot * 4).and_then(|value| text.name(Kind::Talisman, value))
+        {
+            carried.talismans.push(name);
+        }
+    }
+
+    let empty = carried.weapons.is_empty() && carried.armour.is_empty() && carried.talismans.is_empty();
+    (!empty).then_some(carried)
 }
 
 /// The map and the coordinates, when a world is loaded.
@@ -265,6 +356,7 @@ fn parse_block(block: &[u8]) -> Option<Live> {
             .map(|(what, value)| ((*what).to_string(), value))
             .collect(),
         place: None,
+        gear: None,
     })
 }
 
