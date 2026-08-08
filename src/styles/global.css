@@ -1636,12 +1636,61 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; font
  * There is no JavaScript here, so instead of one panel and a row of dead labels,
  * every panel is laid out in sequence with its label as a heading.
  */
-.wiki__body .wds-tabs__wrapper { display: none; }
-.wiki__body .wds-tab__content {
-  display: block !important;
-  margin: var(--s4) 0;
-  padding-left: var(--s4);
-  border-left: 1px solid var(--line);
+/*
+ * Tabbed sections, working.
+ *
+ * Fandom switches these with JavaScript that is not shipped here, so every
+ * panel used to be laid out one after another — which on an item page meant the
+ * description printed eleven times, once per language, with the labels hidden
+ * so nothing explained why. The wiki's markup already marks the panel it
+ * considers current, so showing one is a stylesheet's job and needs no script
+ * at all; clicking between them is handled on the article's container, which is
+ * the one place a listener survives the article being rewritten.
+ *
+ * A group whose panels are not direct children is not one of these, and its
+ * `display` is left alone.
+ */
+.wiki__body .wds-tabber > .wds-tab__content { display: none; }
+.wiki__body .wds-tabber > .wds-tab__content.wds-is-current { display: block; }
+/*
+ * Whatever the markup says, one panel is always on screen. Without this a page
+ * whose tabber lost its marker — the wiki does ship a few — would show a row of
+ * labels above nothing at all.
+ */
+.wiki__body .wds-tabber:not(:has(> .wds-tab__content.wds-is-current)) > .wds-tab__content:first-of-type {
+  display: block;
+}
+
+.wiki__body .wds-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 0 0 var(--s3);
+  padding: 0;
+  list-style: none;
+  border-bottom: 1px solid var(--line);
+}
+.wiki__body .wds-tabs__tab {
+  margin: 0;
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  cursor: pointer;
+  opacity: 0.45;
+  border-bottom: 1px solid transparent;
+  transition: opacity var(--fast) var(--ease), background var(--fast) var(--ease);
+}
+.wiki__body .wds-tabs__tab:hover { opacity: 0.8; background: rgba(255, 255, 255, 0.04); }
+.wiki__body .wds-tabs__tab.wds-is-current {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.06);
+  border-bottom-color: var(--w2);
+}
+/* The label is a link to `#`, which should not read or behave as a link. */
+.wiki__body .wds-tabs__tab a {
+  border-bottom: 0;
+  color: inherit;
+  text-decoration: none;
+  pointer-events: none;
 }
 
 /* Collapsed boxes, opened. */
@@ -1758,6 +1807,25 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; font
  * and the table scrolls sideways instead, which is the only honest way to put a
  * ten-column grid in a narrow column.
  */
+/*
+ * Fandom's "smart group", unsquashed.
+ *
+ * These lay a label and its value side by side, each getting half the card, and
+ * the damage-negation grid on every armour page is one of the labels. Half of a
+ * 320px card is 125px against a table that needs 181, so the grid was cut off
+ * mid-column — the reader saw "Negation" and "Resi". Nothing here is really two
+ * columns at this width, so each part gets the whole card and the grid fits.
+ */
+.wiki__body .pi-smart-group-head,
+.wiki__body .pi-smart-group-body,
+.wiki__body .pi-smart-data-label,
+.wiki__body .pi-smart-data-value {
+  display: block;
+  width: 100%;
+  flex: none;
+  max-width: none;
+}
+
 .wiki__body .portable-infobox table,
 .wiki__body .infobox table {
   display: block;

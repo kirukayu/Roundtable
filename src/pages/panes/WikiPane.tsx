@@ -11,6 +11,62 @@ import type { WikiPage, WikiSearchResult } from "../../lib/types";
 const PAGE = 120;
 
 /**
+ * The flag the wiki labels each language tab with.
+ *
+ * Item descriptions are written out in eleven languages behind a tabber, and
+ * the tab is labelled with a flag and nothing else. Knowing which flag is which
+ * is what lets the article open on the language the reader actually speaks.
+ */
+const FLAGS: Record<string, string> = {
+  ru: "🇷🇺",
+  ja: "🇯🇵",
+  zh: "🇨🇳",
+  de: "🇩🇪",
+  fr: "🇫🇷",
+  it: "🇮🇹",
+  ko: "🇰🇷",
+  pl: "🇵🇱",
+  pt: "🇧🇷",
+  es: "🇪🇸",
+};
+
+/**
+ * Shows one panel of a tab group.
+ *
+ * The wiki's markup already marks the panel it considers current, and the
+ * stylesheet hides the rest, so this only has to move that mark. No listener is
+ * attached to anything inside the article: React replaces the article's markup
+ * more than once for a single page, and anything bound to a child is thrown
+ * away when it does — which is exactly how the first attempt at this failed,
+ * silently, with every language panel still on screen.
+ */
+function showTab(tabber: HTMLElement, chosen: number) {
+  const tabs = tabber.querySelectorAll<HTMLElement>(":scope > .wds-tabs__wrapper .wds-tabs__tab");
+  const panels = tabber.querySelectorAll<HTMLElement>(":scope > .wds-tab__content");
+  if (tabs.length < 2 || tabs.length !== panels.length) return;
+  tabs.forEach((tab, index) => tab.classList.toggle("wds-is-current", index === chosen));
+  panels.forEach((panel, index) => panel.classList.toggle("wds-is-current", index === chosen));
+}
+
+/**
+ * Opens each tab group on the reader's own language, where it has one.
+ *
+ * A nicety rather than the mechanism: if this never runs, the wiki's own choice
+ * stands and the article is still readable, in English. That is why the working
+ * parts of tabbing are the stylesheet and the click handler on the container,
+ * neither of which can be lost to a re-render.
+ */
+function preferMyLanguage(root: HTMLElement) {
+  const wanted = FLAGS[navigator.language.slice(0, 2).toLowerCase()];
+  if (!wanted) return;
+  root.querySelectorAll<HTMLElement>(".wds-tabber").forEach((tabber) => {
+    const tabs = [...tabber.querySelectorAll<HTMLElement>(":scope > .wds-tabs__wrapper .wds-tabs__tab")];
+    const mine = tabs.findIndex((tab) => (tab.dataset.hash ?? "").includes(wanted));
+    if (mine >= 0) showTab(tabber, mine);
+  });
+}
+
+/**
  * The wiki, whole.
  *
  * Every article on the left, in order, scrolling; the article itself on the
@@ -104,6 +160,8 @@ export default function WikiPane({ edition }: { edition: string | null }) {
       setToc([]);
       return;
     }
+    preferMyLanguage(node);
+
     const found = [...node.querySelectorAll("h1, h2, h3")]
       // Infobox field names are headings in Fandom's markup; nine of them at
       // the top of a contents list bury the real sections.
@@ -119,8 +177,38 @@ export default function WikiPane({ edition }: { edition: string | null }) {
     setToc(found.filter((entry) => entry.text.length > 0 && entry.text.length < 70));
   }, []);
 
+  /**
+   * Picks the reader's language again once the article has settled.
+   *
+   * The mount callback fires while React is still working — for one article it
+   * writes the body's markup a second time afterwards, throwing away whatever
+   * the callback had touched. Running once more after the frame is painted
+   * catches the final markup. Nothing depends on this succeeding; the tabs work
+   * without it.
+   */
+  useEffect(() => {
+    if (!page) return;
+    const frame = requestAnimationFrame(() => {
+      if (article.current) preferMyLanguage(article.current);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [page]);
+
   const onBodyClick = (event: React.MouseEvent<HTMLDivElement>) => {
-    const anchor = (event.target as HTMLElement).closest("a");
+    const target = event.target as HTMLElement;
+
+    // A tab label. Handled here on the container rather than on the label
+    // itself, so switching keeps working after React rewrites the article.
+    const tab = target.closest<HTMLElement>(".wds-tabs__tab");
+    const tabber = tab?.closest<HTMLElement>(".wds-tabber");
+    if (tab && tabber) {
+      event.preventDefault();
+      const all = [...tabber.querySelectorAll<HTMLElement>(":scope > .wds-tabs__wrapper .wds-tabs__tab")];
+      showTab(tabber, all.indexOf(tab));
+      return;
+    }
+
+    const anchor = target.closest("a");
     if (!anchor) return;
     const href = anchor.getAttribute("href") ?? "";
     if (!href.startsWith("#wiki:")) return;
