@@ -68,6 +68,9 @@ fn main() {
                     .map(|p| p.to_string_lossy().to_string())
                     .collect();
                 println!("{:<14} {query:?}\n     {}", format!("[{edition:?}]"), found.join(" | "));
+                for (missing, close) in ask::unknown_words(&data, edition, query) {
+                    println!("     no title has {missing:?}; nearest: {}", close.join(", "));
+                }
             }
         }
         return;

@@ -1906,6 +1906,37 @@ pub fn word_weight(app_data: &Path, word: &str) -> f32 {
         .map_or(0.0, |source| index_for(app_data, source).weight(word))
 }
 
+/// The names in a query that no wiki has, each with what is spelt nearly like
+/// it — the same thing the search tells the model, for looking at directly.
+pub fn unknown_words(
+    app_data: &Path,
+    edition: Option<&str>,
+    query: &str,
+) -> Vec<(String, Vec<String>)> {
+    let sources = wikis(edition);
+    let missing = sources
+        .iter()
+        .map(|source| index_for(app_data, source).unmatched(query))
+        .fold(None::<Vec<String>>, |all, here| {
+            Some(match all {
+                None => here,
+                Some(before) => before.into_iter().filter(|w| here.contains(w)).collect(),
+            })
+        })
+        .unwrap_or_default();
+
+    missing
+        .into_iter()
+        .map(|word| {
+            let close = sources
+                .iter()
+                .flat_map(|source| index_for(app_data, source).nearest(&word, 3))
+                .collect();
+            (word, close)
+        })
+        .collect()
+}
+
 /// Which articles a question matches, for anything that wants a list without
 /// spending a model call on it.
 pub fn matching_titles(app_data: &Path, edition: Option<&str>, query: &str, limit: usize) -> Vec<PathBuf> {
