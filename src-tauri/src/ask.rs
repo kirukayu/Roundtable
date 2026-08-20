@@ -7282,8 +7282,28 @@ pub async fn answer_stream<F>(
         // has ever caught for real — the invented talisman, Somerset Stone, the
         // Bull-Goat set, the Dark Souls names — was written WITHOUT reading an
         // article, which is exactly when it keeps working.
+        // A SEARCH counts as prose too, not just a read.
+        //
+        // Its results are the titles of real articles, and the model answers in
+        // the player's language, so what comes back as "Caelid Catacombs" and
+        // "Minor Erdtree" is written as "Катакомбы Каэлида" and "Малое
+        // Эрдерево". The name check compares letters, so it called both
+        // inventions — twice running, on "что находится в Caelid?".
+        //
+        // Transliterating does not rescue this: those are TRANSLATIONS, and
+        // "katakomby" never meets "Catacombs". And the rewrite the check then
+        // demands is impossible, because an answer about a region with every
+        // place name stripped out has nothing left to say — so the model went
+        // quiet and the player got a blank screen both times.
+        //
+        // The trade is the same one already accepted for `read_article`: after
+        // prose has been handed over, names in the answer stop being checkable
+        // and the check stands down rather than blocking a correct answer.
         read_prose |= reply.tool_calls.iter().any(|call| {
-            matches!(call.function.name.as_str(), "read_article" | "read_page")
+            matches!(
+                call.function.name.as_str(),
+                "read_article" | "read_page" | "search_wiki" | "search_web"
+            )
         });
         for (call, ran) in reply.tool_calls.iter().zip(ran) {
             if let Some(note) = ran.note {
@@ -7505,11 +7525,35 @@ fn ungrounded_names(answer: &str, facts: &str, asked: &str) -> Vec<String> {
     // facts or in the question. Stemmed because Russian declines: the table
     // says "Доспех овцебыка" and an answer may say "Доспеха овцебыка", and
     // those are the same armour.
+    let facts_lower = facts.to_lowercase();
+    let asked_lower = asked.to_lowercase();
     let known = |word: &str| -> bool {
         let word = word.to_lowercase();
+        let latin = translit(&word);
         let stem: String = word.chars().take(word.chars().count().saturating_sub(2)).collect();
         let needle = if stem.chars().count() >= 4 { stem } else { word };
-        facts.to_lowercase().contains(&needle) || asked.to_lowercase().contains(&needle)
+        if facts_lower.contains(&needle) || asked_lower.contains(&needle) {
+            return true;
+        }
+        // The answer can be in a different alphabet from the facts. The wikis
+        // are English and the player is not, so a name the search really did
+        // return comes back through the model translated, and the letters no
+        // longer match.
+        //
+        // Transliteration fixes only the half of that which is a NAME rather
+        // than a translation: "Каэлида" -> "kaelida" finds "Caelid", where
+        // "Катакомбы" -> "katakomby" will never find "Catacombs" and
+        // "Эрдерево" -> "erderevo" will never find "Erdtree". So this is not
+        // the whole answer to the problem — see where `read_prose` is set for
+        // the part that is.
+        let Some(latin) = latin else {
+            return false;
+        };
+        let head: String = latin.chars().take(4).collect();
+        let tail: String = latin.chars().skip(1).take(4).collect();
+        (head.chars().count() >= 4 && (facts_lower.contains(&head) || asked_lower.contains(&head)))
+            || (tail.chars().count() >= 4
+                && (facts_lower.contains(&tail) || asked_lower.contains(&tail)))
     };
 
     let capitalised = |word: &str| {
@@ -7523,6 +7567,17 @@ fn ungrounded_names(answer: &str, facts: &str, asked: &str) -> Vec<String> {
     const SAFE: [&str; 12] = [
         "elden", "ring", "convergence", "seamless", "roundtable", "erdtree",
         "shadow", "steam", "windows", "dlss", "fsr", "co-op",
+    ];
+    // A determiner is grammar, not part of a name. German capitalises every
+    // noun, so an answer beginning "Diese Namen sind…" — "these names are" —
+    // reads as a two-word capitalised run and was reported as an invented item.
+    // It cost a round on a German talisman question that was otherwise right.
+    //
+    // Only words that CANNOT open an item name go here. "Der", "Die" and "Das"
+    // can ("Der Riese"), so they are absent on purpose.
+    const GRAMMAR: [&str; 14] = [
+        "diese", "dieser", "dieses", "jene", "jener", "welche", "welcher", "welches",
+        "these", "those", "which", "эти", "этот", "эта",
     ];
     // A short word in capitals is an abbreviation, not a name. STR, DEX, INT,
     // FTH, ARC, FP, HP — the stat shorthand every answer uses, and none of it
@@ -7571,7 +7626,17 @@ fn ungrounded_names(answer: &str, facts: &str, asked: &str) -> Vec<String> {
         // words in the tool's output — that is what being from there means.
         let accounted =
             run.iter().all(|(word, opened)| *opened || known(word) || safe(word));
-        if run.len() >= 2 && !accounted {
+        // A run that OPENS with a determiner is a sentence, not a name. German
+        // capitalises its nouns, so "Diese Namen sind…" — "these names are" —
+        // is an ordinary clause wearing the shape this looks for, and it was
+        // reported as an invented item on an otherwise correct answer.
+        //
+        // Checked on the first word only: "Der Riese" can name something, and
+        // a determiner in the MIDDLE of a name is part of it.
+        let opens_with_grammar = run
+            .first()
+            .is_some_and(|(word, _)| GRAMMAR.contains(&word.to_lowercase().as_str()));
+        if run.len() >= 2 && !accounted && !opens_with_grammar {
             let name = run.iter().map(|(word, _)| *word).collect::<Vec<_>>().join(" ");
             if !found.contains(&name) {
                 found.push(name);
@@ -8376,6 +8441,55 @@ pub fn matching_titles(app_data: &Path, edition: Option<&str>, query: &str, limi
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A determiner is grammar, not the first word of an invented name.
+    #[test]
+    fn a_german_determiner_is_not_an_item() {
+        // Live, from a German talisman answer that was otherwise correct:
+        // "Diese Namen" is "these names", and it cost the answer a round.
+        assert_eq!(
+            ungrounded_names("Diese Namen sind korrekt.", "Radagon's Scarseal", ""),
+            Vec::<String>::new(),
+            "a determiner cannot open an item name"
+        );
+
+        // "Der" can open one, so it is not on the list and this still fires.
+        assert!(
+            !ungrounded_names("Der Riese Wolfgang wartet.", "Radagon's Scarseal", "").is_empty(),
+            "Der Riese is a name shape and must still be checked"
+        );
+    }
+
+    /// A name written in the other alphabet is matched, and an invention is not.
+    #[test]
+    fn a_name_in_another_alphabet_is_still_grounded() {
+        let facts = "Caelid Catacombs, Minor Erdtree, Sellia Hideaway, Redmane Castle";
+
+        // Transliteration covers the part that is a NAME spelled out rather
+        // than translated: "Селлия Каэлида" is "Sellia" and "Caelid" wearing
+        // Cyrillic, letter for letter.
+        assert_eq!(
+            ungrounded_names("Селлия Каэлида.", facts, ""),
+            Vec::<String>::new(),
+            "Селлия/Каэлида are Sellia/Caelid in another alphabet"
+        );
+
+        // It does NOT cover translation. "Катакомбы Гнилых Земель" is a real
+        // place written in Russian, and every word of it is a translation, so
+        // the letters reach nothing and the check calls it invented. That is
+        // the case `read_prose` exists to stand down for after a search.
+        assert!(
+            !ungrounded_names("Катакомбы Гнилых Земель.", facts, "").is_empty(),
+            "translated words cannot be matched by letters; read_prose covers it"
+        );
+
+        // And the check still has teeth: a place from a different game is
+        // caught in any alphabet.
+        assert!(
+            !ungrounded_names("Храм Огня и Судия Гундир.", facts, "").is_empty(),
+            "Dark Souls names are in these facts in no alphabet"
+        );
+    }
 
     /// A finished stream that said nothing is retried, not reported as done.
     #[test]
