@@ -5886,6 +5886,11 @@ fn setup_worth_knowing(player: &Player) -> Option<String> {
          two wikis and the open web and answered that it could not find out — from inside the \
          program that takes the snapshot.\n\
          \n\
+         It keeps the newest twenty automatic snapshots and prunes the rest; a snapshot taken by \
+         hand is never pruned. If asked why old snapshots vanish, that is the answer — not an \
+         invented setting. There is no field called \"Max snapshots\" and no separate Saves card \
+         under System; the snapshots live on the Saves tab.\n\
+         \n\
          ## The two controls you may name\n\
          \n\
          Both are on the Saves tab, on the character itself. A \"Move\" button, which asks which \
