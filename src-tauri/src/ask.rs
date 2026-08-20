@@ -7789,6 +7789,16 @@ async fn stream_final<F>(
     });
 }
 
+/// How a finished stream ended: silence is not success.
+///
+/// `done` arriving with nothing said is the shape that reached a player — the
+/// name check caught three invented places in an answer about Caelid, asked for
+/// the answer again, and the rewrite came back empty. It is worth retrying
+/// rather than reporting, because nothing retries a success.
+fn ended_well(said: bool) -> Outcome {
+    if said { Outcome::Done } else { Outcome::WorthRetrying }
+}
+
 /// How a stream ended.
 #[derive(Debug, PartialEq, Eq)]
 enum Outcome {
@@ -7878,7 +7888,18 @@ where
             }
             if chunk.done == Some(true) {
                 if opening_held && !opening.is_empty() {
+                    said = true;
                     emit(Event::Delta { text: std::mem::take(&mut opening) });
+                }
+                // A clean `done` that carried no words is not an answer. It
+                // reached a player once: the name check caught three invented
+                // places in an answer about Caelid, asked for it again, and the
+                // rewrite came back empty — so the question that had just cost
+                // three rounds displayed nothing at all. Ending "successfully"
+                // with silence is the one outcome worse than an error, because
+                // nothing retries it and nothing explains it.
+                if ended_well(said) == Outcome::WorthRetrying {
+                    return Outcome::WorthRetrying;
                 }
                 emit(Event::Done {
                     lane: lane.clone(),
@@ -8355,6 +8376,16 @@ pub fn matching_titles(app_data: &Path, edition: Option<&str>, query: &str, limi
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A finished stream that said nothing is retried, not reported as done.
+    #[test]
+    fn silence_is_not_a_finished_answer() {
+        // The Caelid answer: three invented names caught, a rewrite asked for,
+        // and the rewrite arrived empty. `done` was still true, so the player
+        // got a blank where three rounds of looking had just happened.
+        assert_eq!(ended_well(false), Outcome::WorthRetrying);
+        assert_eq!(ended_well(true), Outcome::Done);
+    }
 
     /// The step from "what is this" to "what are its numbers".
     #[test]
