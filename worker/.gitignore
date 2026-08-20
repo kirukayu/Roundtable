@@ -1,0 +1,5 @@
+# Local secrets for `wrangler dev`. These must never be committed: the
+# repository is public and these are live keys.
+.dev.vars
+.wrangler/
+node_modules/

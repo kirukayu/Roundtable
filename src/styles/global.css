@@ -1,0 +1,2814 @@
+@import "./tokens.css";
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+
+/* The document scrolls, not an inner element. Anchors then work, the scrollbar
+   sits where the eye expects it, and the fixed fog stays put behind it all. */
+body {
+  background: var(--b0);
+  color: var(--w1);
+  font-family: var(--font);
+  font-size: var(--t-md);
+  font-weight: 300;
+  line-height: 1.6;
+  letter-spacing: -0.006em;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  user-select: none;
+  cursor: default;
+  overflow-x: hidden;
+}
+
+html, body, #root { height: auto; min-height: 100%; }
+
+::selection { background: rgba(255, 255, 255, 0.14); color: var(--w0); }
+h1, h2, h3, p { margin: 0; font-weight: inherit; }
+button, input, select, textarea { font-family: inherit; font-size: inherit; font-weight: inherit; letter-spacing: inherit; }
+:focus-visible { outline: 1px solid var(--w2); outline-offset: 4px; border-radius: 2px; }
+
+.w0 { color: var(--w0); }
+.w2 { color: var(--w2); }
+.w3 { color: var(--w3); }
+.mono { font-family: var(--mono); font-size: var(--t-xs); letter-spacing: 0; }
+.sel { user-select: text; cursor: text; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grow { flex: 1; min-width: 0; }
+.row { display: flex; align-items: center; gap: var(--s3); }
+.between { display: flex; align-items: center; justify-content: space-between; gap: var(--s4); }
+.wrap { flex-wrap: wrap; }
+.col { display: flex; flex-direction: column; gap: var(--s5); }
+.col2 { display: flex; flex-direction: column; gap: var(--s3); }
+.center { text-align: center; }
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Fog                                                                */
+/* ══════════════════════════════════════════════════════════════════ */
+
+/*
+ * Volumetric monochrome fog.
+ *
+ * No `filter: blur()` anywhere, deliberately. Chromium splits a blur over a very
+ * large element into tiles and the seams show up as faint rectangles across the
+ * background — that was the artefacting. A radial gradient carrying enough stops
+ * is already perfectly smooth, and it composites for free.
+ */
+.fog {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--b0);
+}
+
+.fog__m {
+  position: absolute;
+  border-radius: 50%;
+  will-change: transform, opacity;
+  /* Own layer, so the slow drift never repaints the page above it. */
+  transform: translateZ(0);
+}
+
+.fog__m--1 {
+  width: 150vw; height: 130vh; left: -38vw; top: -34vh;
+  background: radial-gradient(closest-side,
+    rgb(255 255 255 / 0.062) 0%,
+    rgb(255 255 255 / 0.048) 16%,
+    rgb(255 255 255 / 0.032) 32%,
+    rgb(255 255 255 / 0.018) 48%,
+    rgb(255 255 255 / 0.009) 63%,
+    rgb(255 255 255 / 0.004) 78%,
+    rgb(255 255 255 / 0.001) 90%,
+    rgb(255 255 255 / 0) 100%);
+  animation: fog1 74s ease-in-out infinite;
+}
+
+.fog__m--2 {
+  width: 130vw; height: 115vh; right: -34vw; top: 8vh;
+  background: radial-gradient(closest-side,
+    rgb(255 255 255 / 0.05) 0%,
+    rgb(255 255 255 / 0.038) 16%,
+    rgb(255 255 255 / 0.026) 33%,
+    rgb(255 255 255 / 0.014) 49%,
+    rgb(255 255 255 / 0.007) 64%,
+    rgb(255 255 255 / 0.003) 79%,
+    rgb(255 255 255 / 0) 100%);
+  animation: fog2 88s ease-in-out infinite;
+}
+
+.fog__m--3 {
+  width: 140vw; height: 110vh; left: 2vw; bottom: -40vh;
+  background: radial-gradient(closest-side,
+    rgb(255 255 255 / 0.056) 0%,
+    rgb(255 255 255 / 0.042) 17%,
+    rgb(255 255 255 / 0.028) 34%,
+    rgb(255 255 255 / 0.015) 50%,
+    rgb(255 255 255 / 0.007) 66%,
+    rgb(255 255 255 / 0.003) 80%,
+    rgb(255 255 255 / 0) 100%);
+  animation: fog3 62s ease-in-out infinite;
+}
+
+/* One subtractive mass. Without something taking light away, the field creeps
+   uniformly brighter and stops reading as smoke. */
+.fog__m--4 {
+  width: 120vw; height: 100vh; left: 10vw; top: -6vh;
+  background: radial-gradient(closest-side,
+    rgb(0 0 0 / 0.55) 0%,
+    rgb(0 0 0 / 0.42) 18%,
+    rgb(0 0 0 / 0.28) 35%,
+    rgb(0 0 0 / 0.15) 52%,
+    rgb(0 0 0 / 0.07) 68%,
+    rgb(0 0 0 / 0.02) 84%,
+    rgb(0 0 0 / 0) 100%);
+  animation: fog4 96s ease-in-out infinite;
+}
+
+@keyframes fog1 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.9; }
+  50%      { transform: translate3d(6vw, 5vh, 0) scale(1.16); opacity: 1; }
+}
+@keyframes fog2 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.1); opacity: 0.78; }
+  50%      { transform: translate3d(-7vw, -6vh, 0) scale(0.94); opacity: 1; }
+}
+@keyframes fog3 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(0.95); opacity: 1; }
+  50%      { transform: translate3d(8vw, -4vh, 0) scale(1.15); opacity: 0.76; }
+}
+@keyframes fog4 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.68; }
+  50%      { transform: translate3d(-9vw, 7vh, 0) scale(1.22); opacity: 1; }
+}
+
+/*
+ * Grain: without it these gradients band badly on an OLED.
+ *
+ * The turbulence has to be flattened first. Raw `feTurbulence` writes noise into
+ * the alpha channel as well as the colour channels, so a handful of pixels come
+ * out nearly opaque white and read as stars scattered over the page. Desaturating
+ * and then forcing alpha to 1 leaves plain luminance noise, which is what grain
+ * actually is.
+ */
+.grain {
+  position: fixed;
+  inset: -50%;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.022;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='discrete' tableValues='1'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation: grain 11s steps(7) infinite;
+}
+@keyframes grain {
+  0%   { transform: translate(0,0); }
+  14%  { transform: translate(-2%,1%); }
+  28%  { transform: translate(1%,-2%); }
+  42%  { transform: translate(-1%,-1%); }
+  57%  { transform: translate(2%,1%); }
+  71%  { transform: translate(-1%,2%); }
+  85%  { transform: translate(1%,1%); }
+  100% { transform: translate(0,0); }
+}
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Shell                                                              */
+/* ══════════════════════════════════════════════════════════════════ */
+
+.app { position: relative; z-index: 2; }
+
+/* Navigation: tiny, and almost invisible until wanted. */
+.nav {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--s4) var(--s7);
+  background: linear-gradient(180deg, rgba(5,5,5,0) 0%, rgba(5,5,5,0) 100%);
+  backdrop-filter: blur(0px);
+  transition: background var(--slow) var(--ease), backdrop-filter var(--slow) var(--ease);
+}
+
+/* Nothing behind the bar until the page has moved; over the hero it is type
+   floating on fog. */
+.nav[data-solid="true"] {
+  background: linear-gradient(180deg, rgba(5,5,5,0.92) 0%, rgba(5,5,5,0) 100%);
+  backdrop-filter: blur(3px);
+}
+
+.nav__mark {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  font-size: var(--t-2xs);
+  font-weight: 500;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--w3);
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+  transition: color var(--fast) var(--ease);
+}
+.nav__mark:hover { color: var(--w1); }
+
+.nav__glyph {
+  width: 5px; height: 5px;
+  border: 1px solid var(--w3);
+  transform: rotate(45deg);
+  transition: border-color var(--fast) var(--ease);
+}
+.nav__mark:hover .nav__glyph { border-color: var(--silver); }
+
+.nav__links { display: flex; gap: var(--s5); }
+
+.nav__link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: var(--t-xs);
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--w4);
+  cursor: pointer;
+  transition: color var(--fast) var(--ease);
+}
+.nav__link:hover, .nav__link[aria-current="page"] { color: var(--w1); }
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Hero                                                               */
+/* ══════════════════════════════════════════════════════════════════ */
+
+.hero {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--s9) var(--s6) var(--s8);
+  position: relative;
+}
+
+/* The hero's own layer, so the scroll-linked recede is one composited element
+   rather than four. */
+.hero__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  will-change: transform, opacity, filter;
+}
+
+.hero__eyebrow {
+  display: block;
+  font-size: var(--t-2xs);
+  font-weight: 400;
+  letter-spacing: 0.44em;
+  text-transform: uppercase;
+  color: var(--w4);
+  margin-bottom: var(--s6);
+}
+
+.hero__title {
+  font-size: clamp(44px, 7.4vw, var(--t-5xl));
+  font-weight: 200;
+  letter-spacing: -0.045em;
+  line-height: 0.94;
+  color: var(--w0);
+}
+
+.hero__title em {
+  display: block;
+  font-style: normal;
+  font-weight: 300;
+  color: var(--w2);
+}
+
+.hero__sub {
+  margin-top: var(--s5);
+  max-width: 46ch;
+  font-size: var(--t-md);
+  font-weight: 300;
+  line-height: 1.75;
+  color: var(--w3);
+}
+
+.hero__cta { margin-top: var(--s7); }
+
+.hero__foot {
+  position: absolute;
+  bottom: var(--s6);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.hero__scroll {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s3);
+  padding: 0;
+  background: none;
+  border: 0;
+  font-size: var(--t-2xs);
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--w4);
+  cursor: pointer;
+  transition: color var(--mid) var(--ease);
+}
+.hero__scroll:hover { color: var(--w2); }
+
+/* A hairline that falls, pauses, and falls again. Small enough to be a hint
+   rather than an arrow. */
+.hero__tick {
+  width: 1px;
+  height: 34px;
+  background: linear-gradient(180deg, var(--w4), transparent);
+  animation: tick 3.4s var(--ease) infinite;
+}
+.hero__scroll:hover .hero__tick { background: linear-gradient(180deg, var(--w2), transparent); }
+
+@keyframes tick {
+  0%       { transform: scaleY(0); transform-origin: top; opacity: 0; }
+  28%      { transform: scaleY(1); transform-origin: top; opacity: 1; }
+  62%      { transform: scaleY(1); transform-origin: bottom; opacity: 1; }
+  90%, 100%{ transform: scaleY(0); transform-origin: bottom; opacity: 0; }
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(24px); filter: blur(8px); }
+  to   { opacity: 1; transform: none; filter: blur(0); }
+}
+
+@keyframes breathe {
+  0%, 100% { opacity: 0.5; }
+  50%      { opacity: 1; }
+}
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Title ribbon                                                       */
+/* ══════════════════════════════════════════════════════════════════ */
+
+/*
+ * Every title, drifting sideways forever. Two identical runs sit end to end and
+ * the pair is moved by exactly half its width, so the seam never arrives. The
+ * edges are masked, otherwise names would pop in and out at the viewport border.
+ */
+.ribbon {
+  position: absolute;
+  left: 0; right: 0;
+  bottom: calc(var(--s8) + var(--s5));
+  overflow: hidden;
+  pointer-events: none;
+  mask-image: linear-gradient(90deg, transparent, #000 16%, #000 84%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 16%, #000 84%, transparent);
+  opacity: 0;
+  animation: fade var(--glacial) var(--ease) 2200ms forwards;
+}
+
+.ribbon__track {
+  display: flex;
+  width: max-content;
+  will-change: transform;
+  animation: ribbon 96s linear infinite;
+}
+
+.ribbon__item {
+  display: flex;
+  align-items: center;
+  gap: var(--s5);
+  padding-right: var(--s5);
+  font-size: var(--t-2xs);
+  font-weight: 400;
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--w4);
+  opacity: 0.55;
+}
+
+.ribbon__sep {
+  width: 3px; height: 3px;
+  border: 1px solid currentColor;
+  transform: rotate(45deg);
+  flex-shrink: 0;
+}
+
+/* Rightward. Starting a half-run behind and travelling back to zero is what
+   makes the direction read left to right without a seam. */
+@keyframes ribbon {
+  from { transform: translate3d(-50%, 0, 0); }
+  to   { transform: translate3d(0, 0, 0); }
+}
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Scroll rail                                                        */
+/* ══════════════════════════════════════════════════════════════════ */
+
+/* One hairline across the top, as long as the page has been read. */
+.rail {
+  position: fixed;
+  top: 0; left: 0;
+  z-index: 40;
+  height: 1px;
+  width: 100%;
+  transform-origin: left;
+  transform: scaleX(var(--p, 0));
+  background: linear-gradient(90deg, rgba(255,255,255,0.05), var(--silver));
+  pointer-events: none;
+}
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Buttons                                                            */
+/* ══════════════════════════════════════════════════════════════════ */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s3);
+  height: 46px;
+  padding: 0 var(--s6);
+  background: transparent;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-full);
+  color: var(--w1);
+  font-size: var(--t-sm);
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  cursor: pointer;
+  /* Some of these are anchors — the wiki link is a real link, because the page
+     is already in a browser. Without this they arrive underlined. */
+  text-decoration: none;
+  transition: border-color var(--mid) var(--ease), color var(--mid) var(--ease),
+    background var(--mid) var(--ease), transform var(--fast) var(--ease);
+}
+
+.btn:hover:not(:disabled) {
+  border-color: var(--w2);
+  color: var(--w0);
+  background: rgba(255, 255, 255, 0.03);
+}
+.btn:active:not(:disabled) { transform: scale(0.985); }
+.btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* The one filled control. Silver on black, never brighter than the type. */
+.btn--solid {
+  background: var(--w0);
+  border-color: var(--w0);
+  color: var(--b0);
+  font-weight: 500;
+}
+.btn--solid:hover:not(:disabled) {
+  background: var(--silver);
+  border-color: var(--silver);
+  color: var(--b0);
+}
+
+.btn--lg { height: 56px; padding: 0 var(--s7); font-size: var(--t-md); }
+.btn--sm { height: 34px; padding: 0 var(--s4); font-size: var(--t-xs); }
+.btn--ghost { border-color: transparent; color: var(--w3); }
+.btn--ghost:hover:not(:disabled) { border-color: transparent; color: var(--w0); background: rgba(255,255,255,0.04); }
+.btn--icon { width: 34px; padding: 0; }
+.btn--wide { width: 100%; }
+.btn--bad:hover:not(:disabled) { border-color: var(--bad); color: var(--bad); }
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Sections                                                           */
+/* ══════════════════════════════════════════════════════════════════ */
+
+.section { padding: var(--s9) var(--s7); max-width: 1440px; margin: 0 auto; }
+.section--tight { padding-top: var(--s7); }
+
+.section__head { margin-bottom: var(--s7); }
+
+.section__label {
+  font-size: var(--t-2xs);
+  font-weight: 400;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: var(--w4);
+  margin-bottom: var(--s4);
+}
+
+.section__title {
+  font-size: var(--t-2xl);
+  font-weight: 200;
+  letter-spacing: -0.03em;
+  color: var(--w0);
+}
+
+.section__note {
+  margin-top: var(--s3);
+  font-size: var(--t-sm);
+  color: var(--w3);
+  max-width: 52ch;
+}
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Poster grid                                                        */
+/* ══════════════════════════════════════════════════════════════════ */
+
+/*
+ * The shelf.
+ *
+ * Four columns, with the flagship taking two of them as a landscape plate. Seven
+ * playable titles then land as 1 + 2 on the first row and 4 on the second, which
+ * is why the grid is fixed rather than auto-filled: `auto-fill` gave five columns
+ * on a wide screen and left two covers stranded on a line of their own.
+ */
+.shelf {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--s5);
+  align-items: start;
+}
+
+.cell { min-width: 0; display: flex; }
+
+/*
+ * The feature is landscape, so it cannot use the 2:3 ratio that gives the row
+ * its height. Instead it stretches to whatever the covers beside it measure and
+ * the frame takes the space left over once its caption is laid out — which puts
+ * the bottom edge of every card in the row on the same line.
+ */
+.cell--feature {
+  grid-column: span 2;
+  align-self: stretch;
+}
+.cell--feature .poster { display: flex; flex-direction: column; }
+.cell--feature .poster__frame { flex: 1; aspect-ratio: auto; min-height: 240px; }
+
+/* The console shelf is a footnote to the catalogue, not a second one. */
+.shelf--rest {
+  grid-template-columns: repeat(4, minmax(0, 174px));
+  gap: var(--s4);
+}
+
+@media (max-width: 1180px) {
+  .shelf { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 860px) {
+  .shelf { grid-template-columns: repeat(2, 1fr); }
+  .shelf--rest { grid-template-columns: repeat(2, minmax(0, 174px)); }
+}
+@media (max-width: 560px) {
+  .shelf { grid-template-columns: 1fr; }
+  .cell--feature { grid-column: span 1; }
+}
+
+.poster {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.poster:disabled { cursor: default; }
+
+.poster__frame {
+  position: relative;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--r);
+  overflow: hidden;
+  background: var(--b2);
+  box-shadow: var(--sh-1);
+  transition: transform 1100ms var(--out), box-shadow 1100ms var(--out);
+}
+
+.poster:hover .poster__frame {
+  transform: translateY(-10px);
+  box-shadow: var(--sh-3);
+}
+
+/* Art arrives desaturated and dim; hovering washes light across it. Both the
+   filter and the scale are driven from the component, so nothing is declared
+   here that would fight them. */
+.poster__frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* The light that crosses the cover on hover. A single soft band, angled, wide
+   enough that the pass reads as a sweep rather than a line. */
+.poster__sweep {
+  position: absolute;
+  top: -30%;
+  left: 0;
+  width: 60%;
+  height: 160%;
+  pointer-events: none;
+  transform: rotate(14deg);
+  background: linear-gradient(
+    90deg,
+    rgb(255 255 255 / 0) 0%,
+    rgb(255 255 255 / 0.05) 38%,
+    rgb(255 255 255 / 0.14) 50%,
+    rgb(255 255 255 / 0.05) 62%,
+    rgb(255 255 255 / 0) 100%
+  );
+}
+
+/* A light vignette so the card has a bottom edge rather than ending. With the
+   caption outside the frame this no longer has to hold text, so it can be a
+   fraction of what it was. */
+.poster__wash {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(0deg, rgba(5,5,5,0.62) 0%, rgba(5,5,5,0.14) 34%, rgba(5,5,5,0) 62%);
+  opacity: 1;
+  transition: opacity var(--slow) var(--ease);
+}
+.poster:hover .poster__wash { opacity: 0.45; }
+
+/* A hairline that only appears on hover; no borders at rest. */
+.poster__edge {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0);
+  transition: box-shadow var(--slow) var(--ease);
+  pointer-events: none;
+}
+.poster:hover .poster__edge { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16); }
+
+/* The index sits in the corner at rest and steps aside for the status on
+   hover; two labels in the same place would fight. */
+.poster__no {
+  position: absolute;
+  top: var(--s4);
+  left: var(--s4);
+  font-family: var(--mono);
+  font-size: var(--t-2xs);
+  letter-spacing: 0.1em;
+  color: var(--w4);
+  opacity: 0.62;
+  transition: opacity var(--mid) var(--ease), transform var(--mid) var(--out);
+}
+.poster:hover .poster__no { opacity: 0; transform: translateY(-6px); }
+
+.poster__mark {
+  position: absolute;
+  top: var(--s4);
+  left: var(--s4);
+  font-size: var(--t-2xs);
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--w2);
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity var(--mid) var(--ease), transform var(--mid) var(--ease);
+}
+.poster:hover .poster__mark { opacity: 1; transform: none; }
+
+/* Under the frame, never over it. These covers carry their own titles in the
+   artwork, so a caption laid on top would be the second name on the same card. */
+.poster__cap {
+  display: block;
+  padding: var(--s4) 2px 0;
+}
+
+.poster__name {
+  display: block;
+  font-size: var(--t-sm);
+  font-weight: 400;
+  letter-spacing: -0.008em;
+  line-height: 1.3;
+  color: var(--w1);
+  transition: color var(--slow) var(--ease);
+}
+.poster:hover .poster__name { color: var(--w0); }
+
+.poster__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  margin-top: 5px;
+  min-width: 0;
+}
+
+.poster__year {
+  font-family: var(--mono);
+  font-size: var(--t-2xs);
+  letter-spacing: 0.14em;
+  color: var(--w4);
+  flex-shrink: 0;
+}
+
+.poster__dot {
+  width: 2px; height: 2px;
+  border-radius: 50%;
+  background: var(--w4);
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+/* The note is the first thing to go when the column is narrow; the year never
+   is. */
+.poster__note {
+  font-size: var(--t-xs);
+  font-weight: 300;
+  color: var(--w4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* The feature plate is twice as wide, so its caption can carry the weight. */
+.cell--feature .poster__cap { padding-top: var(--s5); }
+.cell--feature .poster__name {
+  font-size: var(--t-xl);
+  font-weight: 200;
+  letter-spacing: -0.03em;
+  color: var(--w0);
+}
+.cell--feature .poster__meta { margin-top: 8px; }
+.cell--feature .poster__note { color: var(--w3); }
+
+/* Console exclusives get a typographic plate rather than a missing image. */
+.poster--plate .poster__frame {
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(120% 90% at 50% 0%, var(--b3) 0%, var(--b0) 72%);
+}
+
+.poster--plate .poster__glyph {
+  font-size: var(--t-4xl);
+  font-weight: 100;
+  letter-spacing: -0.05em;
+  color: var(--w4);
+  transition: color var(--slow) var(--ease);
+}
+.poster--plate:hover .poster__glyph { color: var(--w3); }
+
+.poster--dim { cursor: default; }
+.poster--dim:hover .poster__frame { transform: none; box-shadow: var(--sh-1); }
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Creed                                                              */
+/* ══════════════════════════════════════════════════════════════════ */
+
+/* Three statements under the shelf. What the thing does, in the fewest words
+   that are still true, and the last of the page's scroll payoff. */
+/* The section above already pays for its own bottom margin; two full section
+   paddings back to back left a screen of nothing between the shelf and this. */
+.creed { padding-top: var(--s6); padding-bottom: var(--s8); }
+
+.creed__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--s7);
+  border-top: 1px solid var(--line);
+  padding-top: var(--s7);
+}
+
+.creed__item { max-width: 34ch; }
+
+.creed__no {
+  font-family: var(--mono);
+  font-size: var(--t-2xs);
+  letter-spacing: 0.24em;
+  color: var(--w4);
+  margin-bottom: var(--s4);
+}
+
+.creed__t {
+  font-size: var(--t-xl);
+  font-weight: 200;
+  letter-spacing: -0.032em;
+  line-height: 1.1;
+  color: var(--w0);
+}
+
+.creed__b {
+  margin-top: var(--s3);
+  font-size: var(--t-sm);
+  font-weight: 300;
+  line-height: 1.8;
+  color: var(--w3);
+}
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Detail                                                             */
+/* ══════════════════════════════════════════════════════════════════ */
+
+.detail { min-height: 100vh; animation: fade var(--slow) var(--out) both; }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* Shorter than it was. At 62vh the art above the title was a third of the
+   screen with nothing in it, and the tabs started below the fold. */
+.detail__banner {
+  position: relative;
+  height: 42vh;
+  min-height: 360px;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+}
+
+.detail__art {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center 28%;
+  filter: grayscale(1) brightness(0.44) contrast(1.1);
+  transform: scale(1.04);
+  animation: slow-push 48s ease-in-out infinite alternate;
+}
+
+@keyframes slow-push {
+  from { transform: scale(1.04) translate(0, 0); }
+  to   { transform: scale(1.12) translate(-1%, -1.4%); }
+}
+
+/*
+ * The art has to stop being art and become the page, without a line where that
+ * happens. Two ramps do it: a long vertical one that reaches solid background
+ * well before the bottom edge, and a horizontal one that clears the left third
+ * so the title never sits on detail.
+ */
+.detail__veil {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(0deg,
+      var(--b0) 0%,
+      var(--b0) 14%,
+      rgba(5,5,5,0.94) 28%,
+      rgba(5,5,5,0.72) 46%,
+      rgba(5,5,5,0.42) 64%,
+      rgba(5,5,5,0.18) 82%,
+      rgba(5,5,5,0.06) 100%),
+    linear-gradient(90deg,
+      rgba(5,5,5,0.92) 0%,
+      rgba(5,5,5,0.66) 28%,
+      rgba(5,5,5,0.24) 54%,
+      rgba(5,5,5,0) 80%);
+}
+
+/* And the last few pixels bleed past the banner onto whatever follows, so the
+   seam between the two sections is not a straight edge. */
+.detail__banner::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: -80px;
+  height: 80px;
+  background: linear-gradient(180deg, var(--b0), var(--b0));
+  pointer-events: none;
+}
+
+.detail__body {
+  position: relative;
+  width: 100%;
+  padding: var(--s7) var(--s7) var(--s6);
+  /* Clears the back button floating above. */
+  padding-top: var(--s8);
+  max-width: 1440px;
+  margin: 0 auto;
+}
+
+/* The switch leads the body, so the title sits under it. */
+.detail__body .swap { margin-bottom: var(--s3); }
+
+.detail__back {
+  position: absolute;
+  top: var(--s5);
+  left: var(--s7);
+  z-index: 5;
+}
+
+.detail__title {
+  font-size: clamp(34px, 4.6vw, var(--t-3xl));
+  font-weight: 200;
+  letter-spacing: -0.038em;
+  line-height: 1;
+  color: var(--w0);
+  animation: rise var(--slow) var(--out) 160ms both;
+}
+
+.detail__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s5);
+  margin-top: var(--s4);
+  animation: rise var(--slow) var(--out) 300ms both;
+}
+
+.fact { font-size: var(--t-xs); letter-spacing: 0.1em; text-transform: uppercase; color: var(--w3); }
+.fact strong { display: block; margin-top: 3px; font-size: var(--t-sm); font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--w1); }
+
+.detail__act { margin-top: var(--s6); animation: rise var(--slow) var(--out) 440ms both; }
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Edition switch                                                     */
+/* ══════════════════════════════════════════════════════════════════ */
+
+/*
+ * Two covers, one lit. A total conversion changes what Play does, so the choice
+ * gets the weight of a decision rather than a checkbox in a mod list.
+ */
+/*
+ * Switching edition. Words rather than artwork, but a button rather than a
+ * caption — the first version was grey text at the top of a dark banner and
+ * read as a label nobody thought to click.
+ */
+/*
+ * Pinned to the left edge of the banner, level with the title. Not above the
+ * title, where it crowds the name of the thing it is talking about.
+ */
+.swap {
+  position: absolute;
+  left: var(--s5);
+  top: 46%;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s2);
+}
+
+/* Once the content column reaches the left edge there is no margin left to sit
+   in, so it rejoins the flow above the title. */
+@media (max-width: 1240px) {
+  .swap {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-bottom: var(--s4);
+  }
+}
+
+.swap__go {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s3);
+  height: 34px;
+  padding: 0 var(--s4);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-full);
+  color: var(--w1);
+  font: inherit;
+  font-size: var(--t-xs);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--mid) var(--ease), border-color var(--mid) var(--ease),
+    color var(--mid) var(--ease);
+}
+.swap__go:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--w3);
+  color: var(--w0);
+}
+.swap__go svg { color: var(--w2); transition: color var(--mid) var(--ease); }
+.swap__go:hover svg { color: var(--w0); }
+
+.swap__note {
+  font-size: var(--t-2xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--w4);
+}
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Codex                                                              */
+/* ══════════════════════════════════════════════════════════════════ */
+
+.codex__bar { display: flex; align-items: center; gap: var(--s4); }
+.codex__search { height: 48px; font-size: var(--t-md); }
+.codex__count { white-space: nowrap; font-size: var(--t-2xs); }
+
+.codex__kinds { display: flex; flex-wrap: wrap; gap: var(--s2); }
+
+.codex__filter {
+  height: 28px;
+  padding: 0 var(--s4);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--r-full);
+  color: var(--w4);
+  font: inherit;
+  font-size: var(--t-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--fast) var(--ease), border-color var(--fast) var(--ease);
+}
+.codex__filter:hover { color: var(--w2); border-color: var(--line-2); }
+.codex__filter[data-on="true"] { color: var(--b0); background: var(--w0); border-color: var(--w0); }
+
+.codex__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--s2);
+}
+
+.codex__row {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  padding: var(--s3);
+  background: var(--b1);
+  border: 0;
+  border-radius: var(--r-sm);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+  transition: background var(--fast) var(--ease);
+}
+.codex__row:hover { background: var(--b3); }
+
+.codex__thumb {
+  width: 40px; height: 40px;
+  flex-shrink: 0;
+  display: grid; place-items: center;
+  background: var(--b0);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+.codex__thumb img { width: 100%; height: 100%; object-fit: contain; }
+
+.codex__body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.codex__name {
+  display: block;
+  font-size: var(--t-sm);
+  color: var(--w1);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.codex__kind {
+  display: block;
+  font-size: var(--t-2xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--w4);
+}
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Checks                                                             */
+/* ══════════════════════════════════════════════════════════════════ */
+
+.hc { display: flex; flex-direction: column; }
+
+.hc__row {
+  display: flex;
+  gap: var(--s4);
+  padding: var(--s4) 0;
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+.hc__row:last-child { border-bottom: 0; }
+.hc__row svg { flex-shrink: 0; margin-top: 2px; color: var(--w4); }
+.hc__row[data-level="blocker"] svg { color: var(--bad); }
+.hc__row[data-level="warning"] svg { color: var(--warn); }
+.hc__row[data-level="pass"] svg { color: var(--ok); }
+
+.hc__text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.hc__title { font-size: var(--t-sm); color: var(--w0); }
+.hc__detail { font-size: var(--t-xs); color: var(--w3); line-height: 1.7; }
+
+/* The error text as the game prints it, so somebody who has already seen it
+   recognises their own problem. */
+.hc__symptom {
+  font-family: var(--mono);
+  font-size: var(--t-2xs);
+  color: var(--w4);
+  margin-top: 2px;
+}
+.hc__fix {
+  font-size: var(--t-xs);
+  color: var(--w1);
+  margin-top: 3px;
+}
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Saves                                                              */
+/* ══════════════════════════════════════════════════════════════════ */
+
+/* Characters, not files. The files become a filter row; each character is a
+   card carrying the things you can do to it. */
+.sv__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s4);
+  flex-wrap: wrap;
+}
+.sv__files { display: flex; gap: var(--s2); flex-wrap: wrap; }
+
+.sv__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--s4);
+}
+
+.sv__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  padding: var(--s5);
+  background: var(--b1);
+  border-radius: var(--r);
+  min-width: 0;
+}
+
+.sv__top { display: flex; align-items: center; gap: var(--s4); min-width: 0; }
+
+/* The level is the number people actually identify a character by. */
+.sv__level {
+  flex-shrink: 0;
+  width: 46px; height: 46px;
+  display: grid; place-items: center;
+  border: 1px solid var(--line-2);
+  border-radius: 50%;
+  font-size: var(--t-md);
+  font-weight: 300;
+  color: var(--w0);
+  font-variant-numeric: tabular-nums;
+}
+
+.sv__who { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.sv__name {
+  display: block;
+  font-size: var(--t-md);
+  color: var(--w0);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sv__meta { display: block; font-size: var(--t-xs); color: var(--w4); }
+
+.sv__facts { display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
+.sv__fact {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s4);
+  font-size: var(--t-xs);
+  color: var(--w2);
+  min-width: 0;
+}
+
+.sv__acts {
+  display: flex;
+  gap: var(--s2);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Wiki                                                               */
+/* ══════════════════════════════════════════════════════════════════ */
+
+/* Contents on the left, the article in the middle, its headings on the right. */
+/*
+ * Three columns: every article, the article, its contents.
+ *
+ * This one breaks out of the reading width the other panes are held to. They
+ * are forms and lists that get worse wide; this is a reference document with two
+ * rails either side of it, and inside a 1440 pane the article was left with 720
+ * pixels — a portal of icons came out one per row and a floated infobox had
+ * nowhere to float to.
+ */
+.wk {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr) 190px;
+  gap: var(--s5);
+  align-items: start;
+  width: min(1760px, 100%);
+  margin: 0 auto;
+  /* Following a link scrolls here, and the bar across the top is fixed: without
+     this the title lands underneath it. */
+  scroll-margin-top: 88px;
+}
+/* Same for jumping to a section from the contents rail. */
+.wiki__body h1, .wiki__body h2, .wiki__body h3 { scroll-margin-top: 88px; }
+@media (max-width: 1300px) {
+  .wk { grid-template-columns: 240px minmax(0, 1fr); }
+  .wk__toc { display: none; }
+}
+@media (max-width: 900px) {
+  .wk { grid-template-columns: 1fr; }
+  .wk__list { max-height: 240px; }
+}
+
+.wk__side {
+  position: sticky;
+  top: var(--s5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  min-width: 0;
+}
+
+.wk__find {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  height: 40px;
+  padding: 0 var(--s4);
+  background: var(--b1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-full);
+  color: var(--w4);
+  transition: border-color var(--mid) var(--ease);
+}
+.wk__find:focus-within { border-color: var(--w3); }
+
+/* Every article, scrolling. This is the wiki's table of contents, so it holds
+   thousands of rows and grows as it is scrolled rather than all at once. */
+.wk__list {
+  display: flex;
+  flex-direction: column;
+  max-height: 62vh;
+  overflow-y: auto;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.wk__item {
+  /* Thousands of rows in a column with a max height: without this they all
+     shrink to share it and every title lands on top of the next. */
+  flex: 0 0 auto;
+  min-height: 26px;
+  display: flex;
+  align-items: center;
+  padding: var(--s2) var(--s3);
+  background: none;
+  border: 0;
+  color: var(--w2);
+  font: inherit;
+  font-size: var(--t-xs);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color var(--fast) var(--ease), background var(--fast) var(--ease);
+}
+.wk__item:hover { color: var(--w1); background: rgba(255,255,255,0.03); }
+.wk__item[data-on="true"] { color: var(--w0); background: rgba(255,255,255,0.07); }
+
+.wk__input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  background: none;
+  border: 0;
+  color: var(--w1);
+  font-size: var(--t-sm);
+  user-select: text;
+}
+.wk__input:focus { outline: none; }
+.wk__input::placeholder { color: var(--w4); }
+
+.wk__clear {
+  display: grid; place-items: center;
+  width: 22px; height: 22px;
+  background: none; border: 0; border-radius: 50%;
+  color: var(--w4); cursor: pointer;
+}
+.wk__clear:hover { color: var(--w1); background: rgba(255,255,255,0.06); }
+
+.wk__sources { display: flex; gap: var(--s2); flex-wrap: wrap; }
+
+.wk__stage { min-width: 0; }
+.wk__loading { display: grid; place-items: center; min-height: 300px; }
+.wk__article { min-width: 0; }
+
+.wk__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s4);
+  margin-bottom: var(--s5);
+  padding-bottom: var(--s4);
+  border-bottom: 1px solid var(--line);
+}
+.wk__h {
+  font-size: var(--t-2xl);
+  font-weight: 200;
+  letter-spacing: -0.03em;
+  color: var(--w0);
+  line-height: 1.15;
+}
+
+.wk__toc {
+  position: sticky;
+  top: var(--s5);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 70vh;
+  overflow-y: auto;
+  border-left: 1px solid var(--line);
+  padding-left: var(--s4);
+  min-width: 0;
+}
+.wk__toc-item {
+  background: none; border: 0;
+  padding: 5px 0;
+  color: var(--w4);
+  font: inherit;
+  font-size: var(--t-xs);
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--fast) var(--ease);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wk__toc-item[data-level="3"] { padding-left: var(--s3); font-size: var(--t-2xs); }
+.wk__toc-item:hover { color: var(--w1); }
+.wk__toc-item[data-on="true"] { color: var(--w0); }
+
+/*
+ * The article, in our type rather than the wiki's. Everything below re-styles
+ * MediaWiki's own markup: it arrives with its classes intact and none of its
+ * stylesheet, so without this it renders as unstyled HTML from 2003.
+ */
+.wiki__body {
+  font-size: var(--t-sm);
+  line-height: 1.85;
+  color: var(--w2);
+  /* `anywhere` breaks inside ordinary words the moment a column is tight, which
+     turned every narrow table cell into one letter per line. `break-word` only
+     gives way for something that genuinely cannot fit, like a bare URL. */
+  overflow-wrap: break-word;
+}
+.wiki__body h1, .wiki__body h2, .wiki__body h3, .wiki__body h4 {
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  color: var(--w0);
+  margin: var(--s6) 0 var(--s3);
+  padding-bottom: var(--s2);
+  border-bottom: 1px solid var(--line);
+}
+.wiki__body h1 { font-size: var(--t-lg); }
+.wiki__body h2 { font-size: var(--t-md); }
+.wiki__body h3, .wiki__body h4 { font-size: var(--t-sm); border-bottom: 0; }
+.wiki__body p { margin: var(--s3) 0; }
+.wiki__body ul, .wiki__body ol { margin: var(--s3) 0; padding-left: var(--s5); }
+.wiki__body li { margin: 4px 0; }
+.wiki__body a { color: var(--w1); text-decoration: none; border-bottom: 1px solid var(--line-2); }
+.wiki__body a:hover { color: var(--w0); border-bottom-color: var(--w3); }
+.wiki__body img { max-width: 100%; height: auto; border-radius: var(--r-sm); }
+/*
+ * The little icons the wiki draws as inline SVG — the magnifier on a thumbnail
+ * caption, the information mark. They carry no size of their own, so a browser
+ * gives them the default 300 by 150 and they hang a hundred pixels off the side
+ * of the article.
+ */
+.wiki__body svg { width: 1em; height: 1em; vertical-align: -0.15em; }
+.wiki__body .info-icon, .wiki__body .mw-file-magnify { display: inline-block; width: 1em; }
+/* A real table. `display: block` here made every cell stack into a column —
+   the wiki's own layout tables are how half its pages are arranged. */
+.wiki__body table {
+  max-width: 100%;
+  border-collapse: collapse;
+  margin: var(--s4) 0;
+  font-size: var(--t-xs);
+}
+/* Layout tables carry no borders on the wiki, so they should not gain any. */
+.wiki__body table:not([class]) th,
+.wiki__body table:not([class]) td { border: 0; }
+
+/*
+ * The same table, twice.
+ *
+ * Fandom writes a drop table out in two shapes: the full one with its headers,
+ * marked `hidden` and switched on for a wide screen, and a stacked one for a
+ * narrow screen. The switch is a media query in their stylesheet, which is not
+ * here — so both were showing, and the one that came out on top was the stacked
+ * one with no headers at all. Keep the full one and drop the other.
+ */
+.wiki__body table:has(> tbody > tr.hidden) > tbody > tr:not(.hidden) { display: none; }
+.wiki__body table:has(> tbody > tr.hidden) > tbody > tr.hidden { display: table-row; }
+/* MediaWiki's marker for a paragraph or row that ended up with nothing in it. */
+.wiki__body .mw-empty-elt { display: none; }
+
+/*
+ * The same trick one level up, for everything that is not a table.
+ *
+ * A quote template also emits itself twice: a decorative version built out of a
+ * table and five-em serif quote marks, wrapped in `div.hidden`, and a plain
+ * blockquote beside it. Hiding the wrapper leaves the blockquote, which is the
+ * one that reads. Table rows are left to the rule above, where the copy worth
+ * keeping is the other one.
+ */
+.wiki__body div.hidden, .wiki__body span.hidden { display: none; }
+/*
+ * A data table wider than the column scrolls rather than squeezing.
+ *
+ * `wikitable` is MediaWiki's own class for a real table of data — the drop
+ * tables, the stat comparisons. Only those get `display: block`, because doing
+ * it to every table is what once collapsed the layout tables half the wiki is
+ * built out of into a single column.
+ */
+.wiki__body table.wikitable {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.wiki__body table.wikitable th,
+.wiki__body table.wikitable td { overflow-wrap: normal; }
+.wiki__body th, .wiki__body td {
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+  /* A cell is the one place a long word must push the column wider rather than
+     break inside itself — a broken word in a narrow cell becomes a column of
+     single letters, which is unreadable in a way an overflow never is. */
+  overflow-wrap: normal;
+}
+.wiki__body th { color: var(--w1); font-weight: 400; background: rgba(255,255,255,0.02); }
+.wiki__body pre, .wiki__body code {
+  font-family: var(--mono);
+  font-size: var(--t-xs);
+  background: var(--b1);
+  border-radius: var(--r-sm);
+  padding: 2px 5px;
+}
+.wiki__body pre { padding: var(--s4); overflow-x: auto; }
+.wiki__body blockquote {
+  margin: var(--s4) 0;
+  padding-left: var(--s4);
+  border-left: 1px solid var(--line-2);
+  color: var(--w3);
+}
+.wiki__body hr { border: 0; border-top: 1px solid var(--line); margin: var(--s5) 0; }
+
+/*
+ * Thumbnails, floated the way the article was written.
+ *
+ * These used to be forced to `float: none`, which is safe and wastes half the
+ * width: every picture became a full-width block and the text ran under it in a
+ * single ribbon. The column here is wide enough to float them, so the article
+ * reads the way it does on the wiki. Below that width they go back to stacking,
+ * because a float in a narrow column squeezes the text to nothing.
+ */
+/* `:not(.pi-image)` because the infobox's own picture is a `<figure>` too, and
+   floating it inside a 320px card is how the labels ended up beside nothing. */
+.wiki__body .thumb, .wiki__body figure:not(.pi-image) {
+  max-width: min(340px, 45%);
+  margin: var(--s2) 0 var(--s4) var(--s5);
+  float: right;
+  clear: right;
+}
+.wiki__body .thumb.tleft, .wiki__body .floatleft, .wiki__body figure.mw-halign-left {
+  float: left;
+  clear: left;
+  margin: var(--s2) var(--s5) var(--s4) 0;
+}
+.wiki__body .thumbcaption, .wiki__body figcaption {
+  margin-top: var(--s2);
+  font-size: var(--t-2xs);
+  line-height: 1.6;
+  color: var(--w4);
+}
+/*
+ * Headings flow beside a float rather than clearing it.
+ *
+ * Clearing keeps a heading's rule from passing behind a picture, and costs far
+ * more than it saves: an article whose intro is one line then a heading left the
+ * entire left column empty for the height of the infobox — a thousand pixels of
+ * nothing. The wiki itself lets them flow, so this does too.
+ */
+.wiki__body h1 { clear: both; }
+
+/*
+ * Galleries, as a grid.
+ *
+ * Fandom sizes each tile with an inline width and relies on its own stylesheet
+ * making them inline-block. Without that every tile is a full-width block, which
+ * is why a portal of thirty icons came out as one very long column.
+ */
+.wiki__body .wikia-gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s4);
+  justify-content: flex-start;
+  margin: var(--s4) 0;
+}
+.wiki__body .wikia-gallery-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s2);
+}
+.wiki__body .wikia-gallery-item .thumb {
+  float: none;
+  margin: 0;
+  max-width: none;
+  height: auto !important;
+}
+.wiki__body .gallery-image-wrapper {
+  height: auto !important;
+  width: auto !important;
+}
+.wiki__body .wikia-gallery-item img {
+  display: block;
+  border-radius: var(--r-sm);
+}
+.wiki__body .lightbox-caption, .wiki__body .wikia-gallery-caption {
+  font-size: var(--t-2xs);
+  color: var(--w3);
+  text-align: center;
+  line-height: 1.5;
+}
+/* Older galleries are tables of cells rather than divs. */
+.wiki__body .gallerybox { display: inline-block; vertical-align: top; }
+
+/*
+ * The main page, which is a set of boxes rather than an article.
+ *
+ * Each box is a portal — Bosses, Weapons, Locations. Laid out as cards they read
+ * as a menu, which is what they are; stacked they are a mile of scrolling before
+ * the first sentence.
+ */
+.wiki__body .lcs-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--s5);
+  align-items: start;
+}
+.wiki__body .mainpage-box {
+  background: var(--b1);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: var(--s5);
+}
+.wiki__body .mainpage-header {
+  font-size: var(--t-md);
+  font-weight: 300;
+  color: var(--w0);
+  margin-bottom: var(--s4);
+  padding-bottom: var(--s3);
+  border-bottom: 1px solid var(--line);
+}
+.wiki__body .mainpage-header a { border-bottom: 0; }
+/* `<center>` is still all over these pages and it fights every layout above. */
+.wiki__body center { text-align: inherit; }
+.wiki__body .mainpage-header center { text-align: left; }
+
+/*
+ * The Convergence wiki, which is a MediaWiki of its own with its own templates.
+ *
+ * Its front page is a row of counters and a grid of navigation cards. Both are
+ * written as blocks inside inline elements and rely entirely on the wiki's own
+ * stylesheet to lay out, so without this the counters read one word per line —
+ * "1,977", "pages", "19,593", "edits" — and the cards come down in single file.
+ */
+.wiki__body .statistics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s5);
+  justify-content: center;
+  margin: var(--s4) 0;
+}
+.wiki__body .statistics .stat {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s5);
+  align-items: baseline;
+}
+.wiki__body .statistics .stat > span {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+}
+.wiki__body .statistics .stat div { display: inline; color: var(--w0); }
+
+.wiki__body .nav-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--s4);
+  margin: var(--s4) 0;
+}
+.wiki__body .nav-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--r);
+  border: 1px solid var(--line);
+}
+.wiki__body .nav-card img {
+  display: block;
+  width: 100%;
+  height: 140px;
+  object-fit: cover;
+  border-radius: 0;
+}
+.wiki__body .nav-card .thumb,
+.wiki__body .nav-card figure {
+  float: none;
+  margin: 0;
+  max-width: none;
+}
+
+/*
+ * Only the wiki's own navigation goes. `.navbox` used to be in this list, and
+ * on Fandom that class appears on nearly two hundred elements including ones
+ * wrapping real article text — hiding it took half the page with it.
+ */
+.wiki__body .toc, .wiki__body .mw-jump-link, .wiki__body .noprint { display: none; }
+
+/*
+ * Tabbed sections, shown as sections.
+ *
+ * Fandom puts a lot of an article behind tabs that JavaScript switches between.
+ * There is no JavaScript here, so instead of one panel and a row of dead labels,
+ * every panel is laid out in sequence with its label as a heading.
+ */
+/*
+ * Tabbed sections, working.
+ *
+ * Fandom switches these with JavaScript that is not shipped here, so every
+ * panel used to be laid out one after another — which on an item page meant the
+ * description printed eleven times, once per language, with the labels hidden
+ * so nothing explained why. The wiki's markup already marks the panel it
+ * considers current, so showing one is a stylesheet's job and needs no script
+ * at all; clicking between them is handled on the article's container, which is
+ * the one place a listener survives the article being rewritten.
+ *
+ * A group whose panels are not direct children is not one of these, and its
+ * `display` is left alone.
+ */
+.wiki__body .wds-tabber > .wds-tab__content { display: none; }
+.wiki__body .wds-tabber > .wds-tab__content.wds-is-current { display: block; }
+/*
+ * Whatever the markup says, one panel is always on screen. Without this a page
+ * whose tabber lost its marker — the wiki does ship a few — would show a row of
+ * labels above nothing at all.
+ */
+.wiki__body .wds-tabber:not(:has(> .wds-tab__content.wds-is-current)) > .wds-tab__content:first-of-type {
+  display: block;
+}
+
+.wiki__body .wds-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 0 0 var(--s3);
+  padding: 0;
+  list-style: none;
+  border-bottom: 1px solid var(--line);
+}
+.wiki__body .wds-tabs__tab {
+  margin: 0;
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  cursor: pointer;
+  opacity: 0.45;
+  border-bottom: 1px solid transparent;
+  transition: opacity var(--fast) var(--ease), background var(--fast) var(--ease);
+}
+.wiki__body .wds-tabs__tab:hover { opacity: 0.8; background: rgba(255, 255, 255, 0.04); }
+.wiki__body .wds-tabs__tab.wds-is-current {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.06);
+  border-bottom-color: var(--w2);
+}
+/* The label is a link to `#`, which should not read or behave as a link. */
+.wiki__body .wds-tabs__tab a {
+  border-bottom: 0;
+  color: inherit;
+  text-decoration: none;
+  pointer-events: none;
+}
+
+/* Collapsed boxes, opened. */
+.wiki__body .mw-collapsible-content,
+.wiki__body .mw-collapsed > *,
+.wiki__body .collapsible-content { display: block !important; }
+.wiki__body .mw-collapsible-toggle { display: none; }
+
+/*
+ * The infobox, floated like a real one.
+ *
+ * This is the card of stats at the top right of every weapon, boss and location
+ * page. Stacked it pushes the whole article down a screen and leaves the right
+ * half of the column empty; floated, the opening paragraphs sit beside it and
+ * the page reads the way it was written.
+ */
+.wiki__body .portable-infobox, .wiki__body .infobox {
+  float: right;
+  clear: right;
+  width: min(320px, 42%);
+  background: var(--b1);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: var(--s4);
+  margin: 0 0 var(--s5) var(--s5);
+  font-size: var(--t-xs);
+}
+/*
+ * MediaWiki writes these labels as real headings — `<h3 class="pi-data-label">`
+ * — and the article heading rule above was giving each one a top margin and a
+ * rule under it. Inside a stat card that reads as the value floating a long way
+ * above the thing it belongs to, with a line through the middle. Every heading
+ * inside a component has to be reset back to plain text.
+ */
+.wiki__body .portable-infobox h1,
+.wiki__body .portable-infobox h2,
+.wiki__body .portable-infobox h3,
+.wiki__body .portable-infobox h4,
+.wiki__body .infobox h1,
+.wiki__body .infobox h2,
+.wiki__body .infobox h3,
+.wiki__body .infobox h4,
+.wiki__body .wikia-gallery h3,
+.wiki__body .mainpage-box h2,
+.wiki__body .mainpage-box h3 {
+  margin: 0;
+  padding: 0;
+  border-bottom: 0;
+  font-size: inherit;
+  letter-spacing: 0;
+  clear: none;
+}
+
+.wiki__body .pi-data {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s4);
+  padding: var(--s2) 0;
+  border-bottom: 1px solid var(--line);
+}
+.wiki__body .pi-data:last-child { border-bottom: 0; }
+.wiki__body .pi-data-label {
+  color: var(--w4);
+  flex: 0 0 auto;
+  max-width: 45%;
+}
+.wiki__body .pi-data-value { text-align: right; min-width: 0; }
+/* The value is often a `<div>` full of links, which must not become a column. */
+.wiki__body .pi-data-value p { margin: 0; }
+.wiki__body .pi-data-value ul { margin: 0; padding-left: var(--s4); list-style: none; }
+/* Groups of stats, with the group's own heading. */
+.wiki__body .pi-group { margin-top: var(--s3); }
+.wiki__body .pi-header {
+  color: var(--w1);
+  padding-bottom: var(--s2);
+  border-bottom: 1px solid var(--line-2);
+}
+/* Whatever the infobox says, the picture has to fit the card. */
+.wiki__body .pi-image { text-align: center; margin-bottom: var(--s3); }
+.wiki__body .pi-image img, .wiki__body .infobox img {
+  max-width: 100%;
+  height: auto;
+  width: auto !important;
+}
+.wiki__body .pi-title {
+  display: block;
+  font-size: var(--t-sm) !important;
+  color: var(--w0);
+  margin: 0 0 var(--s3) !important;
+  padding-bottom: var(--s3) !important;
+  border-bottom: 1px solid var(--line) !important;
+}
+.wiki__body .pi-header {
+  display: block;
+  font-size: var(--t-xs) !important;
+  margin: var(--s4) 0 var(--s2) !important;
+}
+/* An infobox is a table on the older pages, and a floated table must not
+   also be told it is 100% wide by its own inline attributes. */
+.wiki__body .infobox { display: block; }
+.wiki__body .infobox > tbody > tr > td,
+.wiki__body .infobox > tbody > tr > th {
+  border: 0;
+  padding: var(--s2) 0;
+}
+
+/*
+ * A stat table inside the infobox, allowed to keep its shape.
+ *
+ * These are the damage negation grids on every armour page. In a 320px card
+ * against `overflow-wrap: anywhere` they do not overflow — they shatter, one
+ * letter per line, and the card grows to two thousand pixels. Words stay whole
+ * and the table scrolls sideways instead, which is the only honest way to put a
+ * ten-column grid in a narrow column.
+ */
+/*
+ * Fandom's "smart group", unsquashed.
+ *
+ * These lay a label and its value side by side, each getting half the card, and
+ * the damage-negation grid on every armour page is one of the labels. Half of a
+ * 320px card is 125px against a table that needs 181, so the grid was cut off
+ * mid-column — the reader saw "Negation" and "Resi". Nothing here is really two
+ * columns at this width, so each part gets the whole card and the grid fits.
+ */
+.wiki__body .pi-smart-group-head,
+.wiki__body .pi-smart-group-body,
+.wiki__body .pi-smart-data-label,
+.wiki__body .pi-smart-data-value {
+  display: block;
+  width: 100%;
+  flex: none;
+  max-width: none;
+}
+
+.wiki__body .portable-infobox table,
+.wiki__body .infobox table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  font-size: var(--t-2xs);
+}
+.wiki__body .portable-infobox td,
+.wiki__body .portable-infobox th,
+.wiki__body .infobox td,
+.wiki__body .infobox th {
+  overflow-wrap: normal;
+  word-break: keep-all;
+  white-space: nowrap;
+  padding: var(--s2);
+}
+.wiki__body .portable-infobox img,
+.wiki__body .infobox img { max-width: 100%; height: auto; }
+
+/*
+ * The gallery of pictures at the top of an infobox.
+ *
+ * On the wiki these sit behind tabs and one shows at a time. There is no
+ * JavaScript here to switch them, so every panel is revealed — which for a boss
+ * with five screenshots meant an infobox nearly three thousand pixels tall and a
+ * page that scrolled past the article. Two up keeps all of them and costs a
+ * fifth of the height.
+ */
+.wiki__body .pi-image-collection {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s2);
+  align-items: start;
+}
+.wiki__body .pi-image-collection .pi-tab-link,
+.wiki__body .pi-image-collection .pi-image-collection-tabs { display: none; }
+.wiki__body .pi-image-collection figure,
+.wiki__body .pi-image-collection .pi-tab-content { margin: 0; }
+
+/*
+ * Below this the column is too narrow to float anything: the text would be
+ * squeezed into a gutter. Everything goes back to stacking.
+ */
+@media (max-width: 1100px) {
+  .wiki__body .portable-infobox,
+  .wiki__body .infobox,
+  .wiki__body .thumb,
+  .wiki__body figure {
+    float: none;
+    width: auto;
+    max-width: 100%;
+    margin: var(--s4) 0;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Tabs                                                               */
+/* ══════════════════════════════════════════════════════════════════ */
+
+.tabs {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s6);
+  padding: 0 var(--s7);
+  max-width: 1440px;
+  margin: 0 auto;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+.tabs__list { display: flex; gap: var(--s6); }
+
+.tab {
+  position: relative;
+  padding: var(--s4) 0;
+  background: none;
+  border: 0;
+  color: var(--w4);
+  font-size: var(--t-xs);
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color var(--mid) var(--ease);
+}
+.tab:hover { color: var(--w2); }
+.tab[aria-selected="true"] { color: var(--w0); }
+
+.tab::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: -1px;
+  height: 1px;
+  background: var(--w0);
+  transform: scaleX(0);
+  transition: transform var(--mid) var(--out);
+}
+.tab[aria-selected="true"]::after { transform: scaleX(1); }
+
+.pane { max-width: 1440px; margin: 0 auto; padding: var(--s7); }
+/* The wiki is a document with two rails, not a form. It gets the window. */
+.pane--wide { max-width: none; padding-left: var(--s6); padding-right: var(--s6); }
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Cards, rows, controls                                              */
+/* ══════════════════════════════════════════════════════════════════ */
+
+.card {
+  background: var(--b1);
+  border-radius: var(--r);
+  padding: var(--s5);
+  transition: background var(--mid) var(--ease);
+}
+.card--flush { padding: 0; overflow: hidden; }
+.card__h { display: flex; align-items: center; justify-content: space-between; gap: var(--s4); margin-bottom: var(--s4); min-height: 30px; }
+.card__t { font-size: var(--t-xs); font-weight: 400; letter-spacing: 0.16em; text-transform: uppercase; color: var(--w3); }
+
+.g2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: var(--s4); }
+.g3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: var(--s4); }
+
+.rows { display: flex; flex-direction: column; }
+
+.rw {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  padding: var(--s4) 0;
+  min-height: 56px;
+  border-bottom: 1px solid var(--line);
+  transition: background var(--fast) var(--ease);
+}
+.rw:last-child { border-bottom: 0; }
+.rw--a { cursor: pointer; border-left: 0; width: 100%; text-align: left; color: inherit; font: inherit; background: none; }
+.rw--a:hover { background: rgba(255,255,255,0.018); }
+.rw--on .rw__t { color: var(--w0); }
+.rw__t { font-size: var(--t-sm); font-weight: 400; color: var(--w1); }
+.rw__s { font-size: var(--t-xs); font-weight: 300; color: var(--w4); margin-top: 2px; }
+
+.in, .sel2, textarea.in {
+  width: 100%;
+  height: 42px;
+  padding: 0 var(--s4);
+  background: var(--b0);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  color: var(--w1);
+  font-size: var(--t-sm);
+  font-weight: 300;
+  transition: border-color var(--mid) var(--ease);
+  user-select: text;
+  cursor: text;
+}
+textarea.in { height: auto; min-height: 92px; padding: var(--s3) var(--s4); resize: vertical; line-height: 1.65; }
+.in:focus, .sel2:focus, textarea.in:focus { outline: none; border-color: var(--w3); }
+.in::placeholder { color: var(--w4); }
+
+.sel2 {
+  cursor: pointer;
+  appearance: none;
+  padding-right: var(--s6);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='6'%3E%3Cpath d='M1 1l3.5 3.5L8 1' stroke='%23aaaaaa' stroke-width='1.2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--s4) center;
+}
+.sel2 option { background: var(--b2); color: var(--w1); }
+
+.sw {
+  position: relative;
+  width: 40px; height: 22px;
+  flex-shrink: 0;
+  border-radius: var(--r-full);
+  background: transparent;
+  border: 1px solid var(--line-2);
+  cursor: pointer;
+  padding: 0;
+  transition: border-color var(--mid) var(--ease), background var(--mid) var(--ease);
+}
+.sw::after {
+  content: "";
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--w4);
+  transition: transform var(--mid) var(--out), background var(--mid) var(--ease);
+}
+.sw[aria-checked="true"] { background: var(--w0); border-color: var(--w0); }
+.sw[aria-checked="true"]::after { transform: translateX(18px); background: var(--b0); }
+
+.opt { display: flex; align-items: center; gap: var(--s5); padding: var(--s4) 0; border-bottom: 1px solid var(--line); }
+.opt:last-child { border-bottom: 0; }
+/* These three are spans in some panes, so they have to be told to stack;
+   inline they run the description into the end of the label. */
+.opt__t { display: block; flex: 1; min-width: 0; }
+.opt__l { display: block; font-size: var(--t-sm); font-weight: 400; color: var(--w1); }
+.opt__h { display: block; font-size: var(--t-xs); font-weight: 300; color: var(--w4); line-height: 1.65; margin-top: 3px; }
+
+.rng { width: 100%; appearance: none; height: 1px; background: var(--line-2); cursor: pointer; }
+.rng::-webkit-slider-thumb { appearance: none; width: 12px; height: 12px; border-radius: 50%; background: var(--w1); cursor: grab; }
+
+.fld { display: flex; flex-direction: column; gap: var(--s2); }
+.fld__l { font-size: var(--t-xs); font-weight: 400; letter-spacing: 0.12em; text-transform: uppercase; color: var(--w3); }
+.fld__h { font-size: var(--t-xs); font-weight: 300; color: var(--w4); line-height: 1.65; }
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Chips, notices, blanks                                             */
+/* ══════════════════════════════════════════════════════════════════ */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 var(--s3);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-full);
+  color: var(--w2);
+  font-size: var(--t-2xs);
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.chip--solid { background: var(--w0); border-color: var(--w0); color: var(--b0); }
+.chip--ok { color: var(--ok); border-color: rgba(159,180,164,0.3); }
+.chip--warn { color: var(--warn); border-color: rgba(198,189,163,0.3); }
+.chip--bad { color: var(--bad); border-color: rgba(196,160,160,0.3); }
+
+.dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.beat { animation: beat 2.6s ease-in-out infinite; }
+@keyframes beat { 0%,100% { opacity: 1; } 50% { opacity: 0.28; } }
+
+.note {
+  display: flex;
+  gap: var(--s4);
+  padding: var(--s4) var(--s5);
+  border-left: 1px solid var(--line-2);
+  font-size: var(--t-sm);
+  font-weight: 300;
+  line-height: 1.7;
+  color: var(--w2);
+}
+.note svg { flex-shrink: 0; margin-top: 3px; color: var(--w4); }
+.note--warn { border-left-color: var(--warn); }
+.note--bad { border-left-color: var(--bad); }
+.note__t { font-weight: 400; color: var(--w0); margin-bottom: 3px; }
+.note__b { color: var(--w3); }
+
+.blank {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: var(--s8) var(--s5);
+  gap: var(--s4);
+}
+.blank__i { color: var(--w4); margin-bottom: var(--s2); }
+.blank__t { font-size: var(--t-lg); font-weight: 300; letter-spacing: -0.02em; color: var(--w1); }
+.blank__b { font-size: var(--t-sm); font-weight: 300; color: var(--w4); max-width: 46ch; line-height: 1.75; }
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Overlays                                                           */
+/* ══════════════════════════════════════════════════════════════════ */
+
+.scrim {
+  position: fixed; inset: 0;
+  background: rgba(3,3,3,0.86);
+  backdrop-filter: blur(20px);
+  z-index: 200;
+  display: grid; place-items: center;
+  padding: var(--s7);
+  animation: fade var(--mid) var(--ease) both;
+}
+
+.modal {
+  width: min(640px, 100%);
+  max-height: 84vh;
+  display: flex; flex-direction: column;
+  background: var(--b1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-3);
+  animation: lift var(--mid) var(--out) both;
+  overflow: hidden;
+}
+.modal--w { width: min(980px, 100%); }
+@keyframes lift { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+
+.modal__h { display: flex; align-items: center; justify-content: space-between; gap: var(--s4); padding: var(--s6) var(--s6) var(--s4); }
+.modal__h h2 { font-size: var(--t-lg); font-weight: 300; letter-spacing: -0.02em; color: var(--w0); }
+.modal__b { padding: 0 var(--s6) var(--s6); overflow-y: auto; flex: 1; min-height: 0; }
+.modal__f { padding: var(--s4) var(--s6); display: flex; justify-content: flex-end; gap: var(--s3); border-top: 1px solid var(--line); }
+
+.toasts { position: fixed; right: var(--s6); bottom: var(--s6); z-index: 300; display: flex; flex-direction: column; gap: var(--s3); max-width: 380px; pointer-events: none; }
+.toast {
+  display: flex; gap: var(--s3);
+  padding: var(--s4) var(--s5);
+  background: var(--b2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  box-shadow: var(--sh-2);
+  animation: slide var(--mid) var(--out) both;
+  pointer-events: auto;
+}
+@keyframes slide { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: none; } }
+.toast__i { flex-shrink: 0; margin-top: 2px; color: var(--w4); }
+.toast--ok .toast__i { color: var(--ok); }
+.toast--bad .toast__i { color: var(--bad); }
+.toast__t { font-size: var(--t-sm); font-weight: 400; color: var(--w0); }
+.toast__b { font-size: var(--t-xs); font-weight: 300; color: var(--w3); margin-top: 3px; line-height: 1.6; user-select: text; }
+
+.pal {
+  width: min(620px, 100%);
+  max-height: 58vh;
+  display: flex; flex-direction: column;
+  background: var(--b1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-3);
+  overflow: hidden;
+  animation: lift var(--mid) var(--out) both;
+}
+.pal__input {
+  height: 62px; padding: 0 var(--s6);
+  background: none; border: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--w0); font-size: var(--t-lg); font-weight: 300;
+  user-select: text;
+}
+.pal__input:focus { outline: none; }
+.pal__input::placeholder { color: var(--w4); }
+.pal__list { overflow-y: auto; padding: var(--s3); }
+.pal__item {
+  display: flex; align-items: center; gap: var(--s4);
+  width: 100%; height: 42px; padding: 0 var(--s4);
+  background: none; border: 0; border-radius: var(--r-sm);
+  color: var(--w2); font-size: var(--t-sm); font-weight: 300;
+  text-align: left; cursor: pointer;
+}
+.pal__item[data-active="true"] { background: rgba(255,255,255,0.05); color: var(--w0); }
+.pal__item svg { color: var(--w4); }
+.pal__item[data-active="true"] svg { color: var(--w1); }
+.pal__group { padding: var(--s4) var(--s4) var(--s2); font-size: var(--t-2xs); font-weight: 400; letter-spacing: 0.24em; text-transform: uppercase; color: var(--w4); }
+.pal__hint { margin-left: auto; font-family: var(--mono); font-size: var(--t-2xs); color: var(--w4); }
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Feedback                                                           */
+/* ══════════════════════════════════════════════════════════════════ */
+
+.sk { position: relative; overflow: hidden; background: var(--b2); border-radius: 2px; }
+.sk::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03), transparent);
+  transform: translateX(-100%);
+  animation: shim 2s var(--ease) infinite;
+}
+@keyframes shim { to { transform: translateX(100%); } }
+.sk--line { height: 10px; margin: 10px 0; }
+.sk--block { height: 64px; }
+
+.bar2 { height: 1px; background: var(--line-2); overflow: hidden; }
+.bar2__f { height: 100%; background: var(--w1); transition: width var(--mid) var(--ease); }
+
+.spin {
+  width: 13px; height: 13px;
+  border: 1px solid var(--line-2);
+  border-top-color: var(--w1);
+  border-radius: 50%;
+  animation: sp 900ms linear infinite;
+  flex-shrink: 0;
+}
+@keyframes sp { to { transform: rotate(360deg); } }
+
+.stat__v { font-size: var(--t-xl); font-weight: 200; letter-spacing: -0.03em; line-height: 1.1; color: var(--w0); font-variant-numeric: tabular-nums; }
+.stat__k { font-size: var(--t-2xs); font-weight: 400; letter-spacing: 0.18em; text-transform: uppercase; color: var(--w4); margin-top: var(--s2); }
+
+.hr { height: 1px; background: var(--line); border: 0; margin: var(--s6) 0; }
+.cap { overflow-y: auto; max-height: 420px; }
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Word reveal                                                        */
+/* ══════════════════════════════════════════════════════════════════ */
+
+/*
+ * Each word climbs out of its own clipping box, so what you see is type rising
+ * past an edge rather than sliding across the page. `overflow: clip` rather than
+ * `hidden`, because `hidden` would make every heading a scroll container and
+ * quietly break anchor scrolling.
+ */
+.wordmask {
+  display: inline-block;
+  overflow: clip;
+  vertical-align: bottom;
+  /* Descenders and the blur on the way in both need room to leave the box. */
+  padding-bottom: 0.14em;
+  margin-bottom: -0.14em;
+}
+
+.wordmask__w {
+  display: inline-block;
+  white-space: pre;
+  will-change: transform;
+}
+
+/* A faint sheen that follows the cursor across a poster. */
+.sheen {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(
+    46% 34% at var(--mx, 50%) var(--my, 50%),
+    rgba(255, 255, 255, 0.13) 0%,
+    rgba(255, 255, 255, 0.04) 40%,
+    transparent 72%
+  );
+  transition: opacity var(--mid) var(--ease);
+}
+.poster:hover .sheen { opacity: 1; }
+
+/* Content enters in sequence, slowly. */
+.rev > * { animation: rise var(--slow) var(--out) both; }
+.rev > *:nth-child(1) { animation-delay: 40ms; }
+.rev > *:nth-child(2) { animation-delay: 120ms; }
+.rev > *:nth-child(3) { animation-delay: 200ms; }
+.rev > *:nth-child(4) { animation-delay: 280ms; }
+.rev > *:nth-child(5) { animation-delay: 360ms; }
+.rev > *:nth-child(6) { animation-delay: 440ms; }
+.rev > *:nth-child(7) { animation-delay: 520ms; }
+.rev > *:nth-child(8) { animation-delay: 600ms; }
+.rev > *:nth-child(n + 9) { animation-delay: 660ms; }
+
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.07); border: 4px solid transparent; background-clip: content-box; border-radius: var(--r-full); }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.16); background-clip: content-box; }
+
+.foot {
+  padding: var(--s7);
+  max-width: 1440px;
+  margin: 0 auto;
+  border-top: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s5);
+  font-size: var(--t-xs);
+  font-weight: 300;
+  color: var(--w4);
+}
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Reduced motion                                                     */
+/* ══════════════════════════════════════════════════════════════════ */
+
+/*
+ * The tokens above already collapse every duration that uses them, but the
+ * ambient loops and the reveal transitions carry literal times of their own.
+ * They have to be stopped here or "reduce motion" leaves the page still
+ * drifting.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .fog__m, .grain, .ribbon__track, .hero__tick, .beat, .sk::after {
+    animation: none !important;
+  }
+  .ribbon { opacity: 1; }
+  .poster__sweep { display: none; }
+}
+
+:root[data-reduce-motion="true"] .fog__m,
+:root[data-reduce-motion="true"] .grain,
+:root[data-reduce-motion="true"] .ribbon__track,
+:root[data-reduce-motion="true"] .hero__tick,
+:root[data-reduce-motion="true"] .beat,
+:root[data-reduce-motion="true"] .sk::after { animation: none !important; }
+
+:root[data-reduce-motion="true"] .ribbon { opacity: 1; }
+:root[data-reduce-motion="true"] .poster__sweep { display: none; }
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Inertial scroll                                                    */
+/* ══════════════════════════════════════════════════════════════════ */
+
+/* Lenis drives `scrollTop` itself, so the native smooth behaviour has to be off
+   or the two fight over the same number. */
+html.lenis, html.lenis body { height: auto; }
+html.lenis { scroll-behavior: auto !important; }
+.lenis.lenis-stopped { overflow: clip; }
+.lenis.lenis-smooth [data-lenis-prevent] { overscroll-behavior: contain; }
+.lenis.lenis-smooth iframe { pointer-events: none; }
+
+/* ══════════════════════════════════════════════════════════════════ */
+/* Overlay                                                            */
+/* ══════════════════════════════════════════════════════════════════ */
+
+/*
+ * The window that stands over the game.
+ *
+ * Its own window rather than part of the launcher, because only a native window
+ * can be told to stay above a game — and that only works at all because the
+ * optimiser has already moved the game to borderless, where the desktop
+ * composites it.
+ *
+ * A standing column, not a panel across the middle. The middle of the screen is
+ * where the fight is; the side is where the wall is. Everything reads upward
+ * from the line you type in, the way a conversation does.
+ *
+ * The frame is transparent, so all of this is drawn rather than inherited: the
+ * column carries its own ground, its own hairline and its own light.
+ */
+/* Nothing behind the column but the game. */
+html.overlay-window,
+html.overlay-window body,
+html.overlay-window #root {
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+}
+
+.ov {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  padding: 10px;
+  background: transparent;
+  /* A game is behind this. Text must not be selectable by a stray drag. */
+  user-select: none;
+}
+
+.ov__column {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  /*
+   * A percentage horizontal radius made an ellipse, and an ellipse on a column
+   * this tall reads as a mistake — the sides bulge and the text sits in a slot.
+   * A large fixed radius is the shape that was wanted: square-cornered nowhere,
+   * round at the ends, straight down the sides.
+   */
+  border-radius: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  /*
+   * Charcoal lit from the top, over near-black. The same light the launcher
+   * cards use — this should look like it came out of the same app, because it
+   * did.
+   */
+  background:
+    radial-gradient(90% 40% at 50% -8%, rgba(255, 255, 255, 0.085), transparent 60%),
+    radial-gradient(80% 30% at 50% 104%, rgba(255, 255, 255, 0.05), transparent 60%),
+    linear-gradient(180deg, rgba(23, 23, 23, 0.97), rgba(7, 7, 7, 0.98));
+  /*
+   * No drop shadow.
+   *
+   * A shadow needs something to fall on, and there is nothing here — the window
+   * is transparent, so it lands on the game instead and drags a grey smear
+   * around the column that moves with it. The one-pixel border above is what
+   * separates the shape from what is behind it.
+   */
+  /* The game shows through, faintly. It is an overlay, not a window on top. */
+  backdrop-filter: blur(20px) saturate(0.6);
+}
+
+/*
+ * A single slow pass of light down the left edge.
+ *
+ * Down rather than across, because the column is vertical and a horizontal
+ * sweep on a shape this narrow is over before it registers. Nothing glows; it
+ * moves, once every several seconds, and is gone.
+ */
+.ov__sheen {
+  position: absolute;
+  top: -35%;
+  left: 0;
+  width: 1px;
+  height: 35%;
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  animation: ov-sheen 8s var(--ease) infinite;
+  pointer-events: none;
+}
+@keyframes ov-sheen {
+  0%, 60% { transform: translateY(0); opacity: 0; }
+  66% { opacity: 1; }
+  100% { transform: translateY(390%); opacity: 0; }
+}
+
+/*
+ * The top of the column is the handle.
+ *
+ * All of it, because there is nothing else up here to click and a window you
+ * can pick up anywhere is a window nobody has to hunt for the grip on. The
+ * padding is deep because this sits inside the curve of the cap.
+ */
+.ov__grip {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex: 0 0 auto;
+  padding: var(--s4) var(--s5) var(--s3);
+  cursor: grab;
+}
+.ov__grip:active { cursor: grabbing; }
+
+.ov__mark { color: var(--w2); flex: 0 0 auto; }
+
+.ov__title {
+  flex: 1;
+  color: var(--w3);
+  font-size: var(--t-2xs);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.ov__close {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--w3);
+  cursor: pointer;
+  transition: background var(--t) var(--ease), color var(--t) var(--ease);
+}
+.ov__close:hover { background: rgba(255, 255, 255, 0.11); color: var(--w1); }
+
+/*
+ * Everything said so far.
+ *
+ * Masked top and bottom so the text fades into the curve of the cap instead of
+ * being cut off by it — a hard edge against a rounded container is the thing
+ * that makes a shape like this look like a mistake.
+ */
+.ov__thread {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  padding: var(--s3) var(--s5) var(--s4);
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 22px, #000 calc(100% - 16px), transparent);
+  mask-image: linear-gradient(180deg, transparent, #000 22px, #000 calc(100% - 16px), transparent);
+  scrollbar-width: none;
+}
+.ov__thread::-webkit-scrollbar { display: none; }
+
+.ov__blank {
+  margin: auto 0;
+  padding: 0 var(--s3);
+  text-align: center;
+}
+.ov__blankLead {
+  margin-bottom: var(--s2);
+  color: var(--w2);
+  font-size: var(--t-sm);
+}
+.ov__blankSub {
+  color: var(--w4);
+  font-size: var(--t-xs);
+  line-height: 1.7;
+}
+
+/* One line of the conversation. */
+.ov__said { display: flex; flex-direction: column; }
+
+/*
+ * A question is set apart by a rule rather than a bubble. Bubbles on a narrow
+ * column leave a gutter that is no use to anybody, and this has three hundred
+ * pixels to work with.
+ */
+.ov__said[data-from="you"] .ov__text {
+  padding-left: var(--s3);
+  border-left: 2px solid rgba(255, 255, 255, 0.22);
+  color: var(--w1);
+  font-size: var(--t-sm);
+}
+
+.ov__said[data-from="it"] .ov__text {
+  color: var(--w2);
+  font-size: var(--t-sm);
+}
+
+.ov__text {
+  line-height: 1.72;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.ov__sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-top: var(--s3);
+}
+
+.ov__src {
+  max-width: 100%;
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--w4);
+  font-size: var(--t-2xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ov__lane {
+  margin-top: var(--s2);
+  color: var(--w4);
+  font-family: var(--mono);
+  font-size: var(--t-2xs);
+}
+
+/* An answer that stops early says so. Brighter than the lane line under it,
+   because it is about the answer rather than about the machinery. */
+.ov__cut {
+  margin-top: var(--s2);
+  padding-left: var(--s2);
+  border-left: 1px solid var(--w4);
+  color: var(--w2);
+  font-size: var(--t-xs);
+}
+
+.ov__working { display: flex; flex-direction: column; }
+
+.ov__stage {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  color: var(--w3);
+  font-size: var(--t-xs);
+  letter-spacing: 0.04em;
+}
+
+.ov__dots { display: inline-flex; gap: 3px; }
+.ov__dots i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: ov-dot 1.25s var(--ease) infinite;
+}
+.ov__dots i:nth-child(2) { animation-delay: 0.16s; }
+.ov__dots i:nth-child(3) { animation-delay: 0.32s; }
+@keyframes ov-dot {
+  0%, 100% { opacity: 0.2; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-2px); }
+}
+
+/*
+ * The line you type in, at the bottom of the column.
+ *
+ * Its own rounded field inside the oval, inset far enough to clear the curve.
+ * A field flush against a curved edge looks wedged into it.
+ */
+.ov__ask {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0 var(--s4) var(--s2);
+  padding: 4px 4px 4px var(--s4);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.045);
+  transition: border-color var(--t) var(--ease), background var(--t) var(--ease);
+}
+.ov__ask:focus-within {
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.07);
+}
+.ov__ask[data-busy="true"] { opacity: 0.72; }
+
+.ov__field {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  border: 0;
+  background: none;
+  color: var(--w1);
+  font-size: var(--t-sm);
+  user-select: text;
+}
+.ov__field:focus { outline: none; }
+.ov__field::placeholder { color: var(--w4); }
+
+.ov__send {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  color: #0a0a0a;
+  cursor: pointer;
+  transition: opacity var(--t) var(--ease), transform var(--t) var(--ease);
+}
+.ov__send:hover:not(:disabled) { transform: scale(1.06); }
+.ov__send:disabled {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--w4);
+  cursor: default;
+}
+
+/* Inside the bottom cap, where there is room for nothing else. */
+/* The upscaler, folded away until it is wanted. A strip while it is shut,
+   because most of the time the answer above matters and this does not. */
+.ov__picture {
+  flex: 0 0 auto;
+  margin: 0 var(--s4) var(--s2);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ov__pictureTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  width: 100%;
+  padding: var(--s3) var(--s1);
+  border: 0;
+  background: none;
+  color: var(--w3);
+  font-size: var(--t-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color var(--t) var(--ease);
+}
+.ov__pictureTop:hover { color: var(--w1); }
+.ov__pictureNow {
+  color: var(--w4);
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
+.ov__pictureBody { overflow: hidden; }
+
+/* Putting a snapshot back, which is the one destructive thing the overlay can
+   do — so it is quieter than the button above it until it is asked for, and
+   then it says plainly what it is about to overwrite. */
+.ov__pictureRow {
+  display: block;
+  width: 100%;
+  padding: 0 var(--s1) var(--s3);
+  border: 0;
+  background: none;
+  color: var(--w4);
+  font-size: var(--t-2xs);
+  letter-spacing: 0.04em;
+  text-align: left;
+  cursor: pointer;
+}
+.ov__pictureRow:hover { color: var(--w2); }
+
+.ov__pictureAsk { padding: 0 var(--s1) var(--s3); }
+.ov__pictureWarn {
+  display: block;
+  margin-bottom: var(--s2);
+  color: var(--w4);
+  font-size: var(--t-2xs);
+  line-height: 1.45;
+}
+.ov__pictureAskRow { display: flex; gap: var(--s2); }
+.ov__pictureGo,
+.ov__pictureNo {
+  padding: 6px var(--s3);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 4px;
+  background: none;
+  color: var(--w2);
+  font-size: var(--t-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.ov__pictureGo:hover { border-color: rgba(255, 255, 255, 0.3); color: var(--w1); }
+.ov__pictureNo { color: var(--w4); }
+.ov__pictureNo:hover { color: var(--w2); }
+.ov__pictureGo:disabled { opacity: 0.5; cursor: default; }
+
+.ov__set { padding: 0 var(--s1) var(--s3); }
+.ov__setName {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--w4);
+  font-size: var(--t-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.ov__setRow { display: flex; flex-wrap: wrap; gap: 4px; }
+
+.ov__pick {
+  padding: 4px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--w3);
+  font-size: var(--t-2xs);
+  cursor: pointer;
+  transition:
+    border-color var(--t) var(--ease),
+    background var(--t) var(--ease),
+    color var(--t) var(--ease);
+}
+.ov__pick:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.26);
+  color: var(--w1);
+}
+.ov__pick[aria-pressed="true"] {
+  border-color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--w1);
+}
+.ov__pick:disabled { opacity: 0.5; cursor: default; }
+
+.ov__setNote {
+  margin: 0;
+  padding: 0 var(--s1) var(--s3);
+  color: var(--w4);
+  font-size: var(--t-2xs);
+  line-height: 1.5;
+}
+
+.ov__hint {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s3);
+  padding: 0 var(--s5) var(--s4);
+  color: var(--w4);
+  font-size: var(--t-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ov__wipe {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--w4);
+  font-size: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  transition: color var(--t) var(--ease);
+}
+.ov__wipe:hover { color: var(--w2); }
+
+/*
+ * What the model chose to do, while it does it.
+ *
+ * The search it wrote and the article it opened, in order. These are its own
+ * decisions rather than a progress bar — it picks the words, so seeing them is
+ * how you can tell whether it understood the question before the answer lands.
+ */
+.ov__steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--s2);
+  padding-left: var(--s3);
+  border-left: 1px solid var(--line);
+}
+
+.ov__step {
+  color: var(--w4);
+  font-size: var(--t-2xs);
+  line-height: 1.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Roundtable</title>
+    <style>
+      /*
+       * The launch screen.
+       *
+       * Monochrome, like everything the app owns. One line surfaces, then an
+       * invitation. Once clicked the server starts, the browser opens and this
+       * minimises — it stays alive to answer the folder dialogs a browser is
+       * not allowed to provide.
+       *
+       * No `filter: blur()` on the fog here either; on a small window the tile
+       * seams are even more obvious than on a full page.
+       */
+
+      * { box-sizing: border-box; }
+
+      html, body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #050505;
+        color: #dadada;
+        font-family: "Inter Tight", "Inter", -apple-system, "Segoe UI Variable",
+          "Segoe UI", system-ui, sans-serif;
+        font-weight: 300;
+        letter-spacing: -0.006em;
+        -webkit-font-smoothing: antialiased;
+        user-select: none;
+        cursor: default;
+      }
+
+      .fog { position: fixed; inset: 0; overflow: hidden; }
+
+      .fog span {
+        position: absolute;
+        border-radius: 50%;
+        will-change: transform, opacity;
+        transform: translateZ(0);
+      }
+
+      .f1 {
+        width: 160vw; height: 150vh; left: -42vw; top: -40vh;
+        background: radial-gradient(closest-side,
+          rgb(255 255 255 / 0.07) 0%,
+          rgb(255 255 255 / 0.05) 18%,
+          rgb(255 255 255 / 0.03) 36%,
+          rgb(255 255 255 / 0.014) 54%,
+          rgb(255 255 255 / 0.005) 72%,
+          rgb(255 255 255 / 0) 100%);
+        animation: f1 68s ease-in-out infinite;
+      }
+      .f2 {
+        width: 140vw; height: 130vh; right: -38vw; bottom: -44vh;
+        background: radial-gradient(closest-side,
+          rgb(255 255 255 / 0.055) 0%,
+          rgb(255 255 255 / 0.04) 18%,
+          rgb(255 255 255 / 0.024) 37%,
+          rgb(255 255 255 / 0.011) 55%,
+          rgb(255 255 255 / 0.004) 73%,
+          rgb(255 255 255 / 0) 100%);
+        animation: f2 84s ease-in-out infinite;
+      }
+      .f3 {
+        width: 120vw; height: 110vh; left: 6vw; top: -8vh;
+        background: radial-gradient(closest-side,
+          rgb(0 0 0 / 0.5) 0%,
+          rgb(0 0 0 / 0.36) 20%,
+          rgb(0 0 0 / 0.22) 38%,
+          rgb(0 0 0 / 0.1) 56%,
+          rgb(0 0 0 / 0.03) 76%,
+          rgb(0 0 0 / 0) 100%);
+        animation: f3 92s ease-in-out infinite;
+      }
+
+      @keyframes f1 {
+        0%, 100% { transform: translate3d(0,0,0) scale(1); opacity: 0.9; }
+        50%      { transform: translate3d(5vw,4vh,0) scale(1.16); opacity: 1; }
+      }
+      @keyframes f2 {
+        0%, 100% { transform: translate3d(0,0,0) scale(1.08); opacity: 0.8; }
+        50%      { transform: translate3d(-6vw,-5vh,0) scale(0.94); opacity: 1; }
+      }
+      @keyframes f3 {
+        0%, 100% { transform: translate3d(0,0,0) scale(1); opacity: 0.7; }
+        50%      { transform: translate3d(-7vw,6vh,0) scale(1.2); opacity: 1; }
+      }
+
+      /* Turbulence has to be flattened before it can be used as grain: raw
+         `feTurbulence` writes noise into alpha too, so a few pixels land nearly
+         opaque and read as stars. Desaturate, then force alpha to 1. */
+      .grain {
+        position: fixed;
+        inset: -50%;
+        pointer-events: none;
+        opacity: 0.022;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='discrete' tableValues='1'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+        animation: grain 11s steps(7) infinite;
+      }
+      @keyframes grain {
+        0%   { transform: translate(0,0); }
+        14%  { transform: translate(-2%,1%); }
+        28%  { transform: translate(1%,-2%); }
+        42%  { transform: translate(-1%,-1%); }
+        57%  { transform: translate(2%,1%); }
+        71%  { transform: translate(-1%,2%); }
+        85%  { transform: translate(1%,1%); }
+        100% { transform: translate(0,0); }
+      }
+
+      .drag {
+        position: fixed;
+        inset: 0 0 auto 0;
+        height: 46px;
+        -webkit-app-region: drag;
+        app-region: drag;
+        z-index: 20;
+      }
+
+      .x {
+        position: fixed;
+        top: 10px; right: 10px;
+        width: 32px; height: 32px;
+        display: grid; place-items: center;
+        border: 0; border-radius: 50%;
+        background: transparent;
+        color: #444444;
+        cursor: pointer;
+        z-index: 30;
+        -webkit-app-region: no-drag;
+        app-region: no-drag;
+        transition: background 300ms cubic-bezier(0.22,0.61,0.36,1),
+                    color 300ms cubic-bezier(0.22,0.61,0.36,1);
+      }
+      .x:hover { background: rgba(255,255,255,0.06); color: #ffffff; }
+
+      .mid {
+        position: relative;
+        z-index: 10;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 0 48px;
+      }
+
+      /* Each line surfaces on its own delay; the blur is what makes it read as
+         emerging rather than sliding. */
+      .line {
+        opacity: 0;
+        animation: surface 1500ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+
+      @keyframes surface {
+        from { opacity: 0; transform: translateY(18px); filter: blur(12px); }
+        to   { opacity: 1; transform: none; filter: blur(0); }
+      }
+
+      .mark {
+        font-size: 10px;
+        font-weight: 400;
+        letter-spacing: 0.44em;
+        text-transform: uppercase;
+        color: #444444;
+        margin-bottom: 40px;
+        animation-delay: 250ms;
+      }
+
+      .head {
+        font-size: 42px;
+        font-weight: 200;
+        letter-spacing: -0.04em;
+        line-height: 1.05;
+        color: #ffffff;
+        animation-delay: 750ms;
+      }
+      .head b { font-weight: 400; color: #aaaaaa; }
+
+      .sub {
+        margin-top: 14px;
+        font-size: 13px;
+        font-weight: 300;
+        color: #6e6e6e;
+        animation-delay: 1350ms;
+      }
+
+      .go { margin-top: 48px; animation-delay: 2000ms; }
+
+      .go button {
+        height: 46px;
+        padding: 0 40px;
+        border: 1px solid rgba(255,255,255,0.14);
+        border-radius: 999px;
+        background: transparent;
+        color: #dadada;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 400;
+        letter-spacing: 0.06em;
+        cursor: pointer;
+        transition: border-color 460ms cubic-bezier(0.22,0.61,0.36,1),
+                    color 460ms cubic-bezier(0.22,0.61,0.36,1),
+                    background 460ms cubic-bezier(0.22,0.61,0.36,1);
+      }
+      .go button:hover:not(:disabled) {
+        border-color: #aaaaaa;
+        color: #ffffff;
+        background: rgba(255,255,255,0.03);
+      }
+      .go button:disabled { opacity: 0.35; cursor: default; }
+
+      .go button.on {
+        background: #ffffff;
+        border-color: #ffffff;
+        color: #050505;
+        font-weight: 500;
+      }
+      .go button.on:hover { background: #d6d6d6; border-color: #d6d6d6; }
+
+      .status {
+        margin-top: 28px;
+        font-size: 11px;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        letter-spacing: 0;
+        color: #444444;
+        min-height: 16px;
+        opacity: 0;
+        transition: opacity 500ms ease;
+      }
+      .status[data-on="true"] { opacity: 1; }
+
+      .hint {
+        margin-top: 8px;
+        font-size: 11px;
+        color: #333333;
+        opacity: 0;
+        transition: opacity 700ms ease;
+      }
+      .hint[data-on="true"] { opacity: 1; }
+
+      .foot {
+        position: fixed;
+        left: 0; right: 0; bottom: 22px;
+        text-align: center;
+        font-size: 10px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: #2e2e2e;
+        z-index: 10;
+        animation-delay: 2600ms;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="fog">
+      <span class="f1"></span>
+      <span class="f2"></span>
+      <span class="f3"></span>
+    </div>
+    <div class="grain"></div>
+
+    <div class="drag"></div>
+    <button class="x" id="close" aria-label="Close" type="button">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.6" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+
+    <div class="mid">
+      <div class="line mark">Roundtable</div>
+      <div class="line head">localhost is <b>yours</b></div>
+      <div class="line sub">Mods, co-op and saves, in your own browser</div>
+
+      <div class="line go">
+        <button id="go" type="button">click</button>
+      </div>
+
+      <div class="status" id="status"></div>
+      <div class="hint" id="hint">Keep this window running — it opens folder dialogs</div>
+    </div>
+
+    <div class="line foot">Nothing leaves this machine</div>
+
+    <script>
+      // `withGlobalTauri` puts the API on the window, so this page needs no
+      // bundler of its own.
+      const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
+
+      const button = document.getElementById("go");
+      const status = document.getElementById("status");
+      const hint = document.getElementById("hint");
+      let running = false;
+
+      function say(text) {
+        status.textContent = text;
+        status.dataset.on = "true";
+      }
+
+      /** The session key is never worth showing to a human. */
+      const plain = (url) => url.replace(/\?k=.*$/, "");
+
+      // The listener comes up while this page is still animating in. Showing the
+      // address as soon as it exists turns the click into an invitation rather
+      // than a gamble; if it is somehow not up yet, the click starts it.
+      (async function announce() {
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+          try {
+            const url = await invoke("session_url");
+            if (url) {
+              say(plain(url));
+              return;
+            }
+          } catch {
+            return;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+      })();
+
+      button.addEventListener("click", async () => {
+        // Once the server is up this becomes "open it again", which is what you
+        // want after closing the tab by accident.
+        if (running) {
+          try {
+            await invoke("reopen");
+          } catch (error) {
+            say(String(error));
+          }
+          return;
+        }
+
+        button.disabled = true;
+        button.textContent = "opening";
+
+        try {
+          const url = await invoke("open_in_browser");
+          running = true;
+          button.disabled = false;
+          button.textContent = "open again";
+          button.classList.add("on");
+          say(plain(url));
+          hint.dataset.on = "true";
+        } catch (error) {
+          button.disabled = false;
+          button.textContent = "click";
+          say(String(error));
+        }
+      });
+
+      document.getElementById("close").addEventListener("click", () => {
+        void invoke("quit_app");
+      });
+    </script>
+  </body>
+</html>

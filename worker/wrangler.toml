@@ -1,0 +1,66 @@
+# The answering service behind the in-game overlay.
+#
+# Keys are never in this file. They are set with `wrangler secret put`, which
+# stores them on Cloudflare and keeps them out of a repository that is public.
+#
+#   wrangler secret put GROQ_KEY
+#   wrangler secret put GEMINI_KEY
+#   wrangler secret put MISTRAL_KEY
+#   wrangler secret put OPENROUTER_KEY
+#   wrangler secret put NVIDIA_KEY
+
+name = "roundtable-ask"
+main = "src/index.js"
+compatibility_date = "2026-08-01"
+
+# The free plan allows ten milliseconds of CPU per request, and this worker
+# does not fit in it. Its own logs say so in as many words — `Error: Worker
+# exceeded CPU time limit` — and from the launcher that arrives as a 503 page,
+# which reads as an outage and is not one. Serialising a 28,000-character body
+# once per lane attempt, four attempts and a hedge, is what spends it.
+#
+# On the paid plan the default is thirty seconds and the ceiling is five
+# minutes. This is written down rather than left to the default so that a
+# deploy fails loudly if the plan ever lapses, instead of the worker quietly
+# going back to dropping one question in three.
+[limits]
+cpu_ms = 30000
+
+# Cloudflare's own models, as the last line of defence when every hosted
+# provider is rate-limited. No key: the binding is the credential.
+[ai]
+binding = "AI"
+
+# Counting requests in the isolate does not work: Cloudflare spreads traffic
+# across isolates and each one starts from zero, so sixteen rapid calls sailed
+# through a cap of twelve. This binding is backed by the same machinery as
+# Cloudflare's own rate limiting rules and is shared across the location.
+[[ratelimits]]
+name = "PER_MINUTE"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 12
+  period = 60
+
+# A slower, wider net: bursts are fine, an afternoon of them is not.
+[[ratelimits]]
+name = "SUSTAINED"
+namespace_id = "1002"
+
+  [ratelimits.simple]
+  limit = 90
+  period = 60
+
+# So `/health` can say which code is actually live, without anybody having to
+# remember to say it. There was a hand-bumped BUILD constant here for that, and
+# it did exactly what hand-bumped constants do: two deploys went out on 12 Aug
+# fixing the worst bug this service has had, and `/health` went on reporting the
+# build before them. A stamp that cannot change is worse than no stamp, because
+# it reads as proof. Cloudflare assigns the version id itself and this hands it
+# straight back.
+[version_metadata]
+binding = "CF_VERSION_METADATA"
+
+[observability]
+enabled = true

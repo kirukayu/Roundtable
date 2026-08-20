@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!--
+    The Roundtable mark.
+
+    A table seen from above: a heavy outer ring, a hairline inlay, and the
+    diamond the interface uses as its own glyph at the centre. Monochrome, and
+    built so the two rings still separate at 32 pixels.
+  -->
+  <defs>
+    <linearGradient id="plate" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0%" stop-color="#161616"/>
+      <stop offset="52%" stop-color="#0c0c0c"/>
+      <stop offset="100%" stop-color="#050505"/>
+    </linearGradient>
+
+    <radialGradient id="lift" cx="0.32" cy="0.2" r="0.85">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="55%" stop-color="#ffffff" stop-opacity="0.02"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- The ring is lit from the upper left, like everything else in the app. -->
+    <linearGradient id="metal" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="46%" stop-color="#d6d6d6"/>
+      <stop offset="100%" stop-color="#8a8a8a"/>
+    </linearGradient>
+
+    <clipPath id="plateClip">
+      <rect x="0" y="0" width="1024" height="1024" rx="228" ry="228"/>
+    </clipPath>
+  </defs>
+
+  <rect x="0" y="0" width="1024" height="1024" rx="228" ry="228" fill="url(#plate)"/>
+  <rect x="0" y="0" width="1024" height="1024" rx="228" ry="228" fill="url(#lift)"/>
+
+  <!-- Edge definition, so the plate does not dissolve into a dark taskbar. -->
+  <rect x="4" y="4" width="1016" height="1016" rx="224" ry="224"
+        fill="none" stroke="#ffffff" stroke-opacity="0.11" stroke-width="8"/>
+
+  <g clip-path="url(#plateClip)">
+    <circle cx="512" cy="512" r="298" fill="none" stroke="url(#metal)" stroke-width="54"/>
+    <circle cx="512" cy="512" r="196" fill="none" stroke="#ffffff" stroke-opacity="0.26" stroke-width="10"/>
+    <path d="M512 396 L628 512 L512 628 L396 512 Z" fill="url(#metal)"/>
+  </g>
+</svg>

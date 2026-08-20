@@ -1,0 +1,52 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Roundtable",
+  "version": "0.2.3",
+  "identifier": "app.roundtable.launcher",
+  "build": {
+    "frontendDist": "../launch",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Roundtable",
+        "width": 620,
+        "height": 460,
+        "resizable": false,
+        "decorations": false,
+        "transparent": false,
+        "center": true,
+        "theme": "Dark",
+        "backgroundColor": "#050505"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "copyright": "Roundtable contributors",
+    "category": "Utility",
+    "shortDescription": "Mod, co-op and save manager for FromSoftware titles",
+    "longDescription": "Roundtable manages mods, mod profiles, Seamless Co-op and save files for ELDEN RING and other FromSoftware titles across Steam and non-Steam installations.",
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["English", "Russian"],
+        "installerIcon": "icons/icon.ico"
+      }
+    }
+  }
+}

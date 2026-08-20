@@ -1,0 +1,112 @@
+[package]
+name = "roundtable"
+version = "0.2.3"
+description = "Mod, co-op and save manager for FromSoftware titles"
+edition = "2021"
+rust-version = "1.82"
+default-run = "roundtable"
+
+[lib]
+name = "roundtable_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-global-shortcut = "2"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+toml_edit = "0.23"
+
+thiserror = "2"
+tokio = { version = "1", features = ["fs", "io-util", "macros", "rt-multi-thread", "sync", "time", "process"] }
+futures-util = "0.3"
+parking_lot = "0.12"
+
+# Binary format work: regulation.bin (AES-CBC + DCX/zstd + BND4) and .sl2 saves (MD5).
+aes = "0.8"
+cbc = "0.1"
+# The packed archives' headers are RSA, which is one modular exponentiation on
+# numbers no primitive type holds.
+num-bigint = "0.5"
+md-5 = "0.10"
+sha2 = "0.10"
+hex = "0.4"
+zstd = "0.13"
+# The message archives come DFLT-packed when a translation mod has repacked
+# them, where the game's own are Kraken.
+flate2 = "1"
+
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "gzip", "brotli"] }
+url = "2"
+
+# The interface is served to a real browser rather than drawn in a webview, so
+# the app carries a small HTTP server and embeds the built frontend.
+axum = { version = "0.8", features = ["macros"] }
+tower-http = { version = "0.7", features = ["cors", "set-header"] }
+rust-embed = { version = "8", features = ["mime-guess"] }
+mime_guess = "2"
+
+zip = { version = "6", default-features = false, features = ["deflate", "bzip2", "zstd"] }
+# Extraction only: `util` provides decompress_file, the rest are the codecs mod
+# archives are actually packed with.
+sevenz-rust2 = { version = "0.19", default-features = false, features = [
+    "util",
+    "aes256",
+    "bzip2",
+    "deflate",
+    "zstd",
+    "ppmd",
+] }
+
+walkdir = "2"
+notify = "8"
+notify-debouncer-full = "0.6"
+sysinfo = "0.38"
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "6"
+rand = "0.9"
+regex = "1"
+tracing = "0.1"
+
+discord-rich-presence = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"
+junction = "1"
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Threading",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_Security",
+    "Win32_System_Com",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[features]
+default = ["torrent"]
+torrent = ["dep:librqbit"]
+
+[dependencies.librqbit]
+version = "8.1"
+optional = true
+default-features = false
+features = ["default-tls"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
