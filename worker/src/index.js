@@ -171,26 +171,12 @@ const LANES = [
   { id: "nvidia/llama-3.3-70b", secret: "NVIDIA_KEY", provider: "nvidia", weight: 0.95, daily: 1000,
     url: "https://integrate.api.nvidia.com/v1/chat/completions",
     model: "meta/llama-3.3-70b-instruct" },
-  // Minimax is last among the ones that work, on the same grounds as Llama
-  // above: what it wrote. Twice now it has been the lane that produced the bad
-  // answer, and both were the kinds that are worst here.
-  //
-  // Once it wrote its own tool call out as prose and it reached the player —
-  // `]<]minimax[>[<tool_call>` in the middle of an answer. There is a guard for
-  // that now, and a guard is not a reason to keep feeding it work.
-  //
-  // Then, asked how to play with a friend by a player whose setup line says in
-  // as many words that Seamless Co-op is installed, it spent fifty seconds
-  // explaining summon signs and Furlcalling Finger Remedy — the vanilla system,
-  // which that mod replaces outright — and argued with itself in the answer
-  // about which coloured finger was which. Every other lane in the pool answers
-  // that one correctly. Advice for a game the player is not running is worse
-  // than no answer, because they will go and look for the item.
-  //
-  // It stays, because capacity when everything else is rate-limited is worth
-  // something, and it goes last.
-  { id: "nvidia/minimax-m3", secret: "NVIDIA_KEY", provider: "nvidia", weight: 0.5, daily: 1000,
-    url: "https://integrate.api.nvidia.com/v1/chat/completions", model: "minimaxai/minimax-m3" },
+  // Minimax was kept only for capacity when everything else was rate-limited.
+  // That reason is gone: the pool went from 27 keys to 267, and it was the
+  // worst lane in it — three bad answers (a tool call written out as prose,
+  // vanilla co-op advice to a Seamless player, Farum Azula placed in Caelid),
+  // and 39-54s against mistral's 1.5s. `enable_thinking:false` does not help;
+  // measured four times, it ADDS reasoning output and saves nothing.
 
   // 1,000 a day, not the 45 this used to say.
   //
