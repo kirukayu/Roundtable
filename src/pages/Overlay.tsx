@@ -3,7 +3,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { EASE } from "../components/Motion";
 import { api } from "../lib/ipc";
-import type { AskTurn, BackupRecord, ErssSetting, ErssStatus, SaveEntry } from "../lib/types";
+import type {
+  AskTurn,
+  BackupRecord,
+  Comparison,
+  ErssSetting,
+  ErssStatus,
+  Fingerprint,
+  SaveEntry,
+} from "../lib/types";
 
 /**
  * The overlay.
@@ -369,6 +377,7 @@ export function Overlay() {
 
         <Snapshot />
         <Password />
+        <Match />
         <Picture />
 
         <div className="ov__hint">
@@ -555,6 +564,141 @@ function Password() {
               Changing it is a launch-time decision, so it is read-only here — the mod reads the
               file when the game starts.
             </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/**
+ * Why the two of you cannot connect, answered where it happens.
+ *
+ * A Seamless session refuses to join when the two installs differ, and the
+ * message the game gives says nothing about which mod is the culprit. The
+ * launcher can already tell — it fingerprints what is installed and names the
+ * differences that matter — but that lived on a screen you had to alt-tab to,
+ * which is the wrong place: the moment you need it is while your friend is
+ * sitting in a lobby waiting.
+ *
+ * `block` is the line to paste them. Their line pasted back gives the verdict
+ * and, when it differs, the field-by-field reason with `matters` explaining why
+ * that particular difference stops a session.
+ *
+ * Reads files only. Nothing here touches the running game.
+ */
+function Match() {
+  const [mine, setMine] = useState<Fingerprint | null>(null);
+  const [open, setOpen] = useState(false);
+  const [theirs, setTheirs] = useState("");
+  const [verdict, setVerdict] = useState<Comparison | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const game = (await api.settingsGet()).selectedGame;
+        const coop = await api.coopRead(game);
+        // Solo players are not comparing anything, so this stays out of their way.
+        if (!coop.installed) return;
+        setMine(await api.matchFingerprint(game));
+      } catch {
+        setMine(null);
+      }
+    })();
+  }, []);
+
+  if (!mine) return null;
+
+  const compare = async () => {
+    if (!theirs.trim()) return;
+    setBusy(true);
+    try {
+      const game = (await api.settingsGet()).selectedGame;
+      setVerdict(await api.matchCompare(game, theirs.trim()));
+    } catch {
+      setVerdict(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="ov__picture">
+      <button
+        type="button"
+        className="ov__pictureTop"
+        onClick={() => setOpen((was) => !was)}
+        aria-expanded={open}
+      >
+        <span>Setup match</span>
+        <span className="ov__pictureNow">
+          {verdict === null ? "compare" : verdict.verdict === "match" ? "same" : verdict.verdict}
+        </span>
+      </button>
+
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            className="ov__pictureBody"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: EASE }}
+          >
+            <div className="ov__set">
+              <span className="ov__setName">Send them yours</span>
+              <div className="ov__setRow">
+                <button
+                  type="button"
+                  className="ov__pick"
+                  onClick={() => void navigator.clipboard.writeText(mine.block)}
+                >
+                  Copy mine
+                </button>
+              </div>
+            </div>
+
+            <div className="ov__set">
+              <span className="ov__setName">Paste theirs</span>
+              <div className="ov__setRow">
+                <input
+                  className="ov__field"
+                  value={theirs}
+                  onChange={(event) => setTheirs(event.target.value)}
+                  placeholder="their line"
+                  spellCheck={false}
+                />
+                <button
+                  type="button"
+                  className="ov__pick"
+                  onClick={() => void compare()}
+                  disabled={busy || !theirs.trim()}
+                >
+                  {busy ? "Reading…" : "Compare"}
+                </button>
+              </div>
+            </div>
+
+            {verdict?.verdict === "match" && (
+              <p className="ov__setNote">Same setup. If it still will not connect, it is not the mods.</p>
+            )}
+
+            {verdict?.verdict === "differs" &&
+              verdict.differences.map((difference) => (
+                <div className="ov__set" key={difference.label}>
+                  <span className="ov__setName">{difference.label}</span>
+                  <p className="ov__setNote">
+                    You: {difference.mine} · Them: {difference.theirs}
+                    <br />
+                    {difference.matters}
+                  </p>
+                </div>
+              ))}
+
+            {verdict?.verdict === "unreadable" && (
+              <p className="ov__setNote">That line could not be read. Ask them to copy it again.</p>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

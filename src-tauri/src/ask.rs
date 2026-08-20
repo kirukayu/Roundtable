@@ -7154,6 +7154,30 @@ pub async fn answer_stream<F>(
                     continue;
                 }
 
+                // A tab that does not exist. Same fault, aimed at the launcher
+                // rather than the game, and worse for the player: they go and
+                // look for it.
+                if !told_to_look {
+                    if let Some(tab) = names_a_tab_that_is_not_there(already) {
+                        told_to_look = true;
+                        if std::env::var_os("ROUNDTABLE_TIMING").is_some() {
+                            eprintln!("[notab] {tab}");
+                        }
+                        messages.push(serde_json::json!({
+                            "role": "system",
+                            "content": format!(
+                                "STOP. That answer was not sent. It sends them to a tab called \
+                                 \"{tab}\", and there is no such tab. There are seven and they \
+                                 are named in your instructions: Play, Mods, Saves, Co-op, Codex, \
+                                 Wiki, System. Upscaling and frame generation are under System, \
+                                 and the overlay carries them too. Write the answer again naming \
+                                 a real one. Do not mention this correction."
+                            ),
+                        }));
+                        continue;
+                    }
+                }
+
                 // A tool's name in the answer is the same class of fault as an
                 // invented one — something the player cannot act on — and it is
                 // caught in the same place, while the answer is still unsent.
@@ -8245,6 +8269,63 @@ fn reasoned_past_its_own_doubt(question: &str, answer: &str) -> bool {
 }
 
 /// A figure supplied for something the answer has just called unreadable.
+/// A tab of the launcher that the launcher does not have.
+///
+/// The block already lists them — "The tabs down the side: Play, Mods, Saves,
+/// Co-op, Codex, Wiki, System" — and an answer still sent a player to a tab
+/// called "DLSS и генерация кадров", which does not exist. DLSS lives under
+/// System. That is the worst kind of invention about the launcher, because the
+/// player goes looking and the thing is not there.
+///
+/// `ungrounded_names` CANNOT catch this. It looks for runs of two or more
+/// capitalised words, which is what an item name looks like in English and in
+/// Russian item text — but a Russian UI label is capitalised once and then
+/// lower case ("генерация кадров"), so the invented tab is not a run at all.
+/// Verified by splitting that exact sentence: zero runs of two.
+///
+/// The tabs are a closed set of seven, so this does not need to guess. It looks
+/// for the word for "tab" followed by a quoted name, and checks that name
+/// against the seven. Only quoted names: an answer that says "on the System tab"
+/// without quotes is already right, and prose about tabs in general is not a
+/// claim about a specific one.
+fn names_a_tab_that_is_not_there(answer: &str) -> Option<String> {
+    const TABS: [&str; 7] = ["play", "mods", "saves", "co-op", "codex", "wiki", "system"];
+    // The word for "tab" in the languages this has been asked in, plus English.
+    const TAB_WORD: [&str; 7] =
+        ["вкладк", "tab", "zakładk", "zakladk", "reiter", "onglet", "pestaña"];
+
+    let said = answer.to_lowercase();
+    if !TAB_WORD.iter().any(|word| said.contains(word)) {
+        return None;
+    }
+
+    // Every quoted run in the answer, in the quote marks these languages use.
+    let mut quoted: Vec<String> = Vec::new();
+    let mut held: Option<String> = None;
+    for character in answer.chars() {
+        match character {
+            '"' | '«' | '»' | '“' | '”' => match held.take() {
+                Some(name) => quoted.push(name),
+                None => held = Some(String::new()),
+            },
+            other => {
+                if let Some(name) = held.as_mut() {
+                    name.push(other);
+                }
+            }
+        }
+    }
+
+    quoted.into_iter().find(|name| {
+        let name = name.trim().to_lowercase();
+        // Short quoted things are buttons and settings, not tab names, and the
+        // tabs themselves are all one word.
+        name.chars().count() >= 3
+            && name.split_whitespace().count() <= 5
+            && !TABS.iter().any(|tab| name.contains(tab))
+    })
+}
+
 fn figure_it_said_it_could_not_read(question: &str, answer: &str, facts: &str) -> bool {
     let asked = question.to_lowercase();
     const HOW_MUCH: [&str; 9] = [
@@ -8441,6 +8522,36 @@ pub fn matching_titles(app_data: &Path, edition: Option<&str>, query: &str, limi
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A tab the launcher does not have is caught; the seven real ones are not.
+    #[test]
+    fn an_invented_tab_is_caught() {
+        // Live, from battery 67. DLSS is under System, and this sent the player
+        // hunting for a tab that does not exist.
+        assert_eq!(
+            names_a_tab_that_is_not_there(
+                "DLSS настраивается на вкладке \"DLSS и генерация кадров\" в лаунчере."
+            )
+            .as_deref(),
+            Some("DLSS и генерация кадров"),
+            "no such tab"
+        );
+
+        // A real tab, quoted, in either language.
+        assert_eq!(
+            names_a_tab_that_is_not_there("Откройте вкладку \"System\" и включите DLSS."),
+            None
+        );
+        assert_eq!(names_a_tab_that_is_not_there("Open the \"Saves\" tab."), None);
+
+        // No mention of a tab at all, and quoted things that are buttons.
+        assert_eq!(names_a_tab_that_is_not_there("Нажмите \"Snapshot\"."), None);
+        assert_eq!(
+            names_a_tab_that_is_not_there("Кинжал \"Редувия\" наносит 82 огня."),
+            None,
+            "an item in quotes is not a tab claim"
+        );
+    }
 
     /// A determiner is grammar, not the first word of an invented name.
     #[test]
