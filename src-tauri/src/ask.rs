@@ -5157,6 +5157,35 @@ async fn run_tool(
                         }
                     }
                 }
+                // A weapon's damage, here, for the same reason as the talisman.
+                // Asked Reduvia's stats, the model took this description, saw no
+                // numbers, and concluded the weapon "has no parameters" — while
+                // gear_numbers reads 82 fire off the same row. Put the figure
+                // where the description is so it cannot be missed.
+                if hit.what == "weapon" {
+                    if let Some(armed) = (player.weapon)(&hit.name)
+                        .into_iter()
+                        .flatten()
+                        .next()
+                    {
+                        let damage: Vec<String> = armed
+                            .weapon
+                            .damage
+                            .iter()
+                            .filter(|(_, value)| *value > 0)
+                            .map(|(kind, value)| format!("{value} {kind}"))
+                            .collect();
+                        if !damage.is_empty() {
+                            figured = true;
+                            out.push_str(&format!(
+                                "  Damage: {} — weighs {:.1}. Fuller scaling and requirements are \
+                                 gear_numbers'.\n",
+                                damage.join(", "),
+                                armed.weapon.weight
+                            ));
+                        }
+                    }
+                }
                 if let Some(caption) = &hit.caption {
                     out.push_str(&format!("  {caption}\n"));
                 }

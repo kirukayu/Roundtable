@@ -5143,6 +5143,25 @@ mod update_tests {
 mod tests {
     use super::*;
 
+    /// Reduvia is found on disk with the game shut, at the id `weapon()` takes.
+    #[test]
+    #[ignore = "needs the game installed"]
+    fn offline_name_search_finds_reduvia() {
+        let game = crate::games::Game::EldenRing;
+        let Some(game_dir) = crate::testing::game_dir(game) else {
+            return;
+        };
+        let mod_dir = crate::testing::mod_dir(game);
+        let regulation =
+            crate::formats::regulation::installed(game, &game_dir, mod_dir.as_deref()).unwrap();
+        // The Russian name, since a Convergence install runs in Russian here.
+        let hits = named_offline(&game_dir, mod_dir.as_deref(), "weapon", "Редувия");
+        assert_eq!(hits.len(), 1, "one weapon matches Редувия");
+        let (_, id) = hits[0];
+        assert_eq!(id, 1_040_000, "the row this project pins");
+        assert!(regulation.weapon(id).is_some(), "and weapon() reads it");
+    }
+
     /// A size the way somebody says it, not the way a disk stores it.
     #[test]
     fn a_byte_count_is_said_out_loud() {
