@@ -329,6 +329,9 @@ export function Overlay() {
                     {steps.map((note, index) => (
                       <motion.div
                         className="ov__step"
+                        // The last step is the one happening now; mark it so it
+                        // can carry a live pulse while the rest sit done above.
+                        data-live={index === steps.length - 1 ? "true" : undefined}
                         key={note}
                         initial={{ opacity: 0, x: -4 }}
                         animate={{ opacity: 1, x: 0 }}

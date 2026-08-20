@@ -2511,9 +2511,16 @@ html.overlay-window #root {
   font-size: var(--t-sm);
 }
 
+/* Answer sits on a faint top-lit card, not a bubble. */
 .ov__said[data-from="it"] .ov__text {
   color: var(--w2);
   font-size: var(--t-sm);
+  padding: var(--s3) var(--s3) calc(var(--s3) + 1px);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background:
+    radial-gradient(120% 80% at 0% 0%, rgba(255, 255, 255, 0.05), transparent 55%),
+    rgba(255, 255, 255, 0.018);
 }
 
 .ov__text {
@@ -2540,6 +2547,12 @@ html.overlay-window #root {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition: color var(--t) var(--ease), border-color var(--t) var(--ease);
+}
+/* Lift on hover — it is a source, not decoration. */
+.ov__src:hover {
+  color: var(--w2);
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .ov__lane {
@@ -2576,13 +2589,14 @@ html.overlay-window #root {
   height: 3px;
   border-radius: 50%;
   background: currentColor;
-  animation: ov-dot 1.25s var(--ease) infinite;
+  animation: ov-dot 1.4s var(--ease) infinite;
 }
-.ov__dots i:nth-child(2) { animation-delay: 0.16s; }
-.ov__dots i:nth-child(3) { animation-delay: 0.32s; }
+.ov__dots i:nth-child(2) { animation-delay: 0.18s; }
+.ov__dots i:nth-child(3) { animation-delay: 0.36s; }
+/* A wave, not a bounce — the three read as one thing moving. */
 @keyframes ov-dot {
-  0%, 100% { opacity: 0.2; transform: translateY(0); }
-  40% { opacity: 1; transform: translateY(-2px); }
+  0%, 70%, 100% { opacity: 0.22; transform: translateY(0) scale(1); }
+  35% { opacity: 1; transform: translateY(-2px) scale(1.25); }
 }
 
 /*
@@ -2811,4 +2825,24 @@ html.overlay-window #root {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* The step happening now, brighter with a pulse on its rule. */
+.ov__step[data-live="true"] {
+  color: var(--w2);
+  position: relative;
+}
+.ov__step[data-live="true"]::before {
+  content: "";
+  position: absolute;
+  left: calc(-1 * var(--s3) - 1px);
+  top: 50%;
+  width: 1px;
+  height: 10px;
+  margin-top: -5px;
+  background: var(--w2);
+  animation: ov-step-pulse 1.3s var(--ease) infinite;
+}
+@keyframes ov-step-pulse {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 1; }
 }
