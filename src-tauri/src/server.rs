@@ -1433,13 +1433,23 @@ fn player_state(ctx: &Ctx, edition: Option<&str>, asked: &str) -> crate::ask::Pl
                 let found = crate::text::look_up(game, &spelling, 8)?;
                 (!found.is_empty()).then_some(found)
             })
-            .unwrap_or_default();
+            .map(|found| {
+                found
+                    .into_iter()
+                    .filter(|hit| hit.kind == crate::text::Kind::Weapon)
+                    .map(|hit| (hit.name, i64::from(hit.id - hit.id % 100)))
+                    .collect::<Vec<_>>()
+            })
+            // Game shut means `look_up` is empty, so fall back to the disk — or
+            // "my weapon" aside, no weapon was findable by name without the game.
+            .filter(|hits| !hits.is_empty())
+            .unwrap_or_else(|| {
+                named_offline(&game_dir, mod_dir.as_deref(), "weapon", wanted)
+            });
         let theirs = crate::live::read(game).map(|live| attributes_of(&live));
         let found: Vec<crate::ask::Armed> = named
             .into_iter()
-            .filter(|hit| hit.kind == crate::text::Kind::Weapon)
-            .filter_map(|hit| {
-                let id = i64::from(hit.id - hit.id % 100);
+            .filter_map(|(name, id)| {
                 Some(crate::ask::Armed {
                     weapon: regulation.weapon(id)?,
                     // Only with the game open: without their attributes there
@@ -1448,7 +1458,7 @@ fn player_state(ctx: &Ctx, edition: Option<&str>, asked: &str) -> crate::ask::Pl
                     hits: theirs.map_or_else(Vec::new, |theirs| regulation.attack_with(id, theirs)),
                     now: Vec::new(),
                     skill: skill_on(&regulation, &game_dir, mod_dir.as_deref(), id),
-                    name: hit.name,
+                    name,
                     modded: mod_dir.is_some(),
                 })
             })
@@ -2125,6 +2135,12 @@ fn player_state(ctx: &Ctx, edition: Option<&str>, asked: &str) -> crate::ask::Pl
                     break;
                 }
             }
+        }
+        // With the game shut, `look_up` reads nothing, so Reduvia — asked about
+        // most — came back "not a weapon in this installation". Match on disk.
+        if candidates.is_empty() {
+            candidates =
+                named_offline(&game_dir, mod_dir.as_deref(), "weapon", wanted);
         }
 
         candidates
@@ -4723,6 +4739,39 @@ fn spellings(asking: &Asking, wanted: &str) -> Vec<String> {
         ));
     }
     out
+}
+
+/// An item by name, read off the disk when the game is shut.
+///
+/// `text::look_up` needs the running process, so with the game closed every
+/// name search came back empty and even Reduvia read as "not in this game". The
+/// catalogue is on disk, so match there instead — `what` is "weapon", "armour"
+/// and so on. The language is the game's own, so a Russian name matches Russian.
+fn named_offline(
+    game_dir: &std::path::Path,
+    mod_dir: Option<&std::path::Path>,
+    what: &str,
+    wanted: &str,
+) -> Vec<(String, i64)> {
+    let looking = wanted.trim().to_lowercase();
+    if looking.is_empty() {
+        return Vec::new();
+    }
+    let language = crate::language::status(game_dir)
+        .current
+        .as_deref()
+        .and_then(crate::language::locale_folder)
+        .unwrap_or("engus");
+    crate::library::everything(game_dir, mod_dir, language)
+        .iter()
+        .filter(|item| item.what == what)
+        .filter(|item| {
+            let name = item.name.to_lowercase();
+            name.contains(&looking) || looking.contains(&name)
+        })
+        .map(|item| (item.name.clone(), i64::from(item.id)))
+        .take(3)
+        .collect()
 }
 
 /// The save the game wrote last.
