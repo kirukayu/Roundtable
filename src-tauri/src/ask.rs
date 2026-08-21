@@ -4830,7 +4830,10 @@ async fn run_tool(
                         ));
                     } else {
                         threshold.push_str(&format!(
-                            "Needs {label} {floor} or MORE — {} in all, hardest first:\n",
+                            "{} spells need {label} {floor} or greater. This is the FULL set — \
+                             every spell whose {label} requirement is {floor} or above, the ones \
+                             needing more than {floor} included, NOT only those at exactly \
+                             {floor}. Hardest first:\n",
                             at_least.len()
                         ));
                         threshold.push_str(&listing(&at_least));
@@ -4850,23 +4853,29 @@ async fn run_tool(
                     };
                 }
 
+                let has_live = int > 0 || fth > 0 || arc > 0;
                 let mut out = String::new();
                 if !threshold.is_empty() {
                     out.push_str(&threshold);
-                    out.push('\n');
                 }
-                if !opened.is_empty() {
+                // The opens-up (delta) list only means something with their real
+                // stats known and a raise ABOVE them. Without a live reading the
+                // "from" is zero and it degrades to "everything up to X", which
+                // ran together with the at-least list and made a model read one
+                // range where there were two. Hold it back unless it is real.
+                if !opened.is_empty() && has_live {
                     out.push_str(&format!(
-                        "Reaching INT {want_int}, FTH {want_fth}, ARC {want_arc} — up from INT \
-                         {int}, FTH {fth}, ARC {arc} — opens these, and only these, which need NO \
-                         MORE than that:\n"
+                        "\nA DIFFERENT QUESTION — raising to INT {want_int}, FTH {want_fth}, ARC \
+                         {want_arc} from INT {int}, FTH {fth}, ARC {arc} newly opens these, which \
+                         need NO MORE than that:\n"
                     ));
                     out.push_str(&listing(&opened));
                 }
                 out.push_str(
-                    "\n\"Opens\" is the requirement being no more than the value asked; \"needs X \
-                     or MORE\" is the opposite list. Do not report one as the other, and never say \
-                     a game has no spell above a value unless the second list says none.\n",
+                    "\n\"At least X\" / \"X or more\" / \"минимум X\" / \"mindestens X\" means X AND \
+                     everything above it — report every spell in the list, not only those that \
+                     need exactly X. Never say a game has no spell above a value unless the list \
+                     says none.\n",
                 );
                 return Ran {
                     output: out,
@@ -8723,12 +8732,18 @@ mod tests {
         let http = reqwest::Client::new();
         let ran = run_tool(&http, Path::new("."), None, &player, &call).await;
 
-        // The threshold list must exist and must carry the spell that needs 70 —
-        // the one the opens-up list can never show and the model denied existed.
-        assert!(ran.output.contains("or MORE"), "must give the at-least list: {}", ran.output);
+        // The at-least list must carry BOTH the spell at exactly 60 and the one
+        // at 70 — the higher one is what a model dropped, reading "at least" as
+        // "exactly". With no live save the opens-up list stays out of the way.
+        assert!(ran.output.contains("or greater"), "must give the at-least list: {}", ran.output);
         assert!(ran.output.contains("Dark Moon"), "a 70-INT spell must show for >=60: {}", ran.output);
-        // And the two directions are labelled so they cannot be swapped.
-        assert!(ran.output.contains("opens"), "keeps the opens-up list too: {}", ran.output);
+        assert!(ran.output.contains("Comet"), "the 60-INT spell shows too: {}", ran.output);
+        // And it must forbid narrowing "at least" to "exactly".
+        assert!(
+            ran.output.to_lowercase().contains("exactly"),
+            "must warn against the exact-only read: {}",
+            ran.output
+        );
     }
 
     /// A determiner is grammar, not the first word of an invented name.
