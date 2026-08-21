@@ -5962,6 +5962,11 @@ fn setup_worth_knowing(player: &Player) -> Option<String> {
          invented setting. There is no field called \"Max snapshots\" and no separate Saves card \
          under System; the snapshots live on the Saves tab.\n\
          \n\
+         It launches the game through the mod loader itself, handing it the executable and \
+         skipping Steam init, so Steam does not need to be running to play. Only Seamless Co-op's \
+         matchmaking needs a Steam connection, to find other players. If asked why it \"needs \
+         Steam\" to launch, correct that: it does not.\n\
+         \n\
          ## The two controls you may name\n\
          \n\
          Both are on the Saves tab, on the character itself. A \"Move\" button, which asks which \
