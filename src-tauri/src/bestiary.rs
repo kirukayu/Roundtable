@@ -412,6 +412,59 @@ mod tests {
         crate::testing::app_data().unwrap_or_default()
     }
 
+    /// Can the reward table be joined to a boss's NAME by position? The reward
+    /// (GameAreaParam) has a reward + a map + a position and no name; the map
+    /// files have the name + a position. If the nearest same-map dweller to each
+    /// reward is close and reads like a boss, "which boss gives the most runes"
+    /// can be answered honestly; if the distances are large or the names random,
+    /// it cannot and this stays refused.
+    ///
+    /// `cargo test --lib show_boss_rewards -- --ignored --nocapture`
+    #[test]
+    #[ignore = "a probe, not a check"]
+    fn show_boss_rewards() {
+        let game = crate::games::Game::EldenRing;
+        let Some(game_dir) = crate::testing::game_dir(game) else {
+            return;
+        };
+        let mod_dir = crate::testing::mod_dir(game);
+        let Some(regulation) =
+            crate::formats::regulation::installed(game, &game_dir, mod_dir.as_deref())
+        else {
+            return;
+        };
+        let bosses = regulation.bosses();
+        let world = everyone(&data(), game, &game_dir, mod_dir.as_deref());
+        println!("{} reward rows, {} dwellers", bosses.len(), world.dwellers.len());
+
+        let mut joined: Vec<(u32, String, f32, String)> = Vec::new();
+        let mut no_map = 0;
+        for boss in &bosses {
+            let nearest = world
+                .dwellers
+                .iter()
+                .filter(|d| d.map == boss.map)
+                .map(|d| {
+                    let dist = ((d.x - boss.x).powi(2)
+                        + (d.y - boss.y).powi(2)
+                        + (d.z - boss.z).powi(2))
+                    .sqrt();
+                    (dist, d)
+                })
+                .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+            match nearest {
+                Some((dist, d)) => joined.push((boss.runes, d.name.clone(), dist, boss.map.clone())),
+                None => no_map += 1,
+            }
+        }
+        joined.sort_by_key(|(runes, ..)| std::cmp::Reverse(*runes));
+        println!("{no_map} reward rows had no dweller on their map");
+        println!("richest 25 by reward, nearest same-map name and its distance:");
+        for (runes, name, dist, map) in joined.iter().take(25) {
+            println!("  {runes:>8} runes  ~{dist:>8.0}u  {name}  [{map}]");
+        }
+    }
+
     /// Who the launcher would name, for reading rather than asserting.
     ///
     /// `cargo test --lib show_the_world -- --ignored --nocapture`
