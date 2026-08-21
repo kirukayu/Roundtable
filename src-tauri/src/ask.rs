@@ -4176,8 +4176,11 @@ async fn run_tool(
             if matching.is_empty() {
                 return Ran {
                     output: format!(
-                        "None of this game's {} ashes of war matches \"{wanted}\". Try another \
-                         word before saying there is none.",
+                        "No ash of war is NAMED \"{wanted}\", and this tool searches ash names \
+                         only. Whether an ash can go on a given weapon is NOT in this data. If \
+                         \"{wanted}\" is a kind of weapon, that is why it missed — do not say that \
+                         weapon takes no ash of war; search an effect or an ash's own name. {} \
+                         ashes in all.",
                         all.len()
                     ),
                     note: Some(format!("No ash · {wanted}")),
@@ -8585,6 +8588,42 @@ mod tests {
             None,
             "an item in quotes is not a tab claim"
         );
+    }
+
+    /// A weapon-type query to the ashes tool must not read as "no ashes for
+    /// that weapon". Live, from battery 70: asked which ash of war whips take,
+    /// the model searched the name "whip", got the miss, and told the player
+    /// whips have no ashes of war — which is false. Which weapon an ash fits is
+    /// not in this data, so the miss must forbid that conclusion outright.
+    #[tokio::test]
+    async fn a_weapon_type_is_not_a_missing_ash() {
+        let player = Player {
+            ashes: Box::new(|| {
+                vec![
+                    WarAsh { name: "Lion's Claw".into(), costs: vec![("R2".into(), 15)] },
+                    WarAsh { name: "Bloody Slash".into(), costs: vec![("R2".into(), 12)] },
+                ]
+            }),
+            ..Player::default()
+        };
+        let named = |wanted: &str| ToolCall {
+            id: "1".into(),
+            function: ToolFunction {
+                name: "ashes_of_war".into(),
+                arguments: format!("{{\"name\":\"{wanted}\"}}"),
+            },
+        };
+        let http = reqwest::Client::new();
+
+        let miss = run_tool(&http, Path::new("."), None, &player, &named("whip")).await;
+        let said = miss.output.to_lowercase();
+        assert!(said.contains("do not say"), "must forbid the 'no ashes' claim: {said}");
+        assert!(said.contains("ash names only"), "must say it searches by name: {said}");
+        assert!(said.contains("kind of weapon"), "must name the weapon-type case: {said}");
+
+        // A real ash name still lists that ash.
+        let hit = run_tool(&http, Path::new("."), None, &player, &named("lion")).await;
+        assert!(hit.output.contains("Lion's Claw"), "a named match still lists: {}", hit.output);
     }
 
     /// A determiner is grammar, not the first word of an invented name.
