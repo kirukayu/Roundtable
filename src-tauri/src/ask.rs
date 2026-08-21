@@ -836,6 +836,12 @@ fn tool_schemas() -> serde_json::Value {
                      the rest are the named people standing around it — there is no flag that \
                      says which is which, so do not claim one is a boss beyond that.\n\
                      \n\
+                     It answers one boss or one map, never the whole game at once: \"which boss \
+                     gives the most runes\" cannot be answered, because the table that holds \
+                     every reward holds no names to rank. Say that plainly and offer to look up \
+                     a boss they name — do NOT reach for the base game's answer and pass it off \
+                     as this installation's.\n\
+                     \n\
                      For what can be GOT on a map rather than who is on it, use \
                      what_drops_here. Named things almost never drop anything — a boss's reward \
                      is scripted rather than rolled — so an empty drop line here is not the \
