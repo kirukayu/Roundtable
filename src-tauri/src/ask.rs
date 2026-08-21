@@ -1431,8 +1431,9 @@ fn tool_schemas() -> serde_json::Value {
                                  means the BLOCK percentage for shields and the damage for \
                                  everything else; \"guard\" for guard boost, which is what \
                                  decides whether a block staggers; \"weight\" for the lightest \
-                                 first; or poison, rot, bleed or curse. Left out, shields rank \
-                                 by physical block and everything else by total damage." },
+                                 first and \"heaviest\" for the heaviest first; or poison, rot, \
+                                 bleed or curse. Left out, shields rank by physical block and \
+                                 everything else by total damage." },
                         "strength": { "type": "integer", "description":
                             "Work the damage out at this strength instead of theirs." },
                         "dexterity": { "type": "integer", "description": "The same for dexterity." },
@@ -2101,6 +2102,7 @@ fn a_whole_set(found: &Suited) -> String {
 fn a_class_of(found: &Sorted) -> String {
     let by = match found.by.as_str() {
         "weight" => "the lightest first".to_string(),
+        "heaviest" => "the heaviest first".to_string(),
         "boost" => "the most guard boost first".to_string(),
         "damage" => "the most base damage first".to_string(),
         other => format!("the most {other} first"),

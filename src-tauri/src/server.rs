@@ -2473,6 +2473,11 @@ fn player_state(ctx: &Ctx, edition: Option<&str>, asked: &str) -> crate::ask::Pl
         let by = by.trim().to_lowercase();
         let measure = if by.is_empty() {
             if guarding { "physical".to_string() } else { "damage".to_string() }
+        } else if ["heaviest", "heavy", "тяжёл", "тяжел", "schwer", "lourd", "pesad", "ciężk"]
+            .iter()
+            .any(|word| by.contains(word))
+        {
+            "heaviest".to_string()
         } else if ["weight", "вес", "gewicht", "peso", "light", "lightest"]
             .iter()
             .any(|word| by.contains(word))
@@ -2512,6 +2517,7 @@ fn player_state(ctx: &Ctx, edition: Option<&str>, asked: &str) -> crate::ask::Pl
                 let damage: u16 = held.damage.iter().map(|(_, value)| value).sum();
                 let figure = match measure.as_str() {
                     "weight" => -held.weight,
+                    "heaviest" => held.weight,
                     "boost" => f32::from(held.boost.unwrap_or(0)),
                     "damage" => f32::from(damage),
                     other => {
