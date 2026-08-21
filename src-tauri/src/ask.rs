@@ -4804,13 +4804,8 @@ async fn run_tool(
                     .filter(|cast| !now.iter().any(|had| had.name == cast.name))
                     .collect();
 
-                // The "at least X" answer, off every spell rather than the delta
-                // above. Asked which spells need AT LEAST 60 INT, a model called
-                // this with intelligence 60, got the opens-up list — spells
-                // needing NO MORE than 60, the opposite — and reported nothing
-                // needs more. So answer the threshold outright, per attribute the
-                // caller named, off the raw value given not the one maxed with
-                // their current stat.
+                // "At least X" off every spell, not the delta: the threshold
+                // set. Off the raw value asked, not one maxed with current.
                 let req = |cast: &Cast, key: &str| -> u8 {
                     cast.spell
                         .needs
@@ -4864,11 +4859,8 @@ async fn run_tool(
                 if !threshold.is_empty() {
                     out.push_str(&threshold);
                 }
-                // The opens-up (delta) list only means something with their real
-                // stats known and a raise ABOVE them. Without a live reading the
-                // "from" is zero and it degrades to "everything up to X", which
-                // ran together with the at-least list and made a model read one
-                // range where there were two. Hold it back unless it is real.
+                // Opens-up needs real stats to rise from; without a live read it
+                // is just "everything up to X" and muddies the at-least list.
                 if !opened.is_empty() && has_live {
                     out.push_str(&format!(
                         "\nA DIFFERENT QUESTION — raising to INT {want_int}, FTH {want_fth}, ARC \
@@ -8663,11 +8655,7 @@ mod tests {
         );
     }
 
-    /// A weapon-type query to the ashes tool must not read as "no ashes for
-    /// that weapon". Live, from battery 70: asked which ash of war whips take,
-    /// the model searched the name "whip", got the miss, and told the player
-    /// whips have no ashes of war — which is false. Which weapon an ash fits is
-    /// not in this data, so the miss must forbid that conclusion outright.
+    /// A weapon-type ash search must not read as "no ashes for that weapon".
     #[tokio::test]
     async fn a_weapon_type_is_not_a_missing_ash() {
         let player = Player {
@@ -8699,11 +8687,7 @@ mod tests {
         assert!(hit.output.contains("Lion's Claw"), "a named match still lists: {}", hit.output);
     }
 
-    /// "Which spells need at least 60 INT" must not be answered with the
-    /// opens-up list, which is the opposite. Live, from battery 71: asked in
-    /// German for spells needing >=60 INT, the model got "opens up at 60"
-    /// (needs <=60), named the one spell at exactly 60, and said all others are
-    /// below — hiding every spell that needs 61+.
+    /// "At least X int" must not be answered with the opens-up list (the opposite).
     #[tokio::test]
     async fn at_least_a_stat_is_not_the_opens_up_list() {
         let player = Player {
@@ -8738,9 +8722,7 @@ mod tests {
         let http = reqwest::Client::new();
         let ran = run_tool(&http, Path::new("."), None, &player, &call).await;
 
-        // The at-least list must carry BOTH the spell at exactly 60 and the one
-        // at 70 — the higher one is what a model dropped, reading "at least" as
-        // "exactly". With no live save the opens-up list stays out of the way.
+        // Must carry both the 60 and the 70 spell; the 70 is what got dropped.
         assert!(ran.output.contains("or greater"), "must give the at-least list: {}", ran.output);
         assert!(ran.output.contains("Dark Moon"), "a 70-INT spell must show for >=60: {}", ran.output);
         assert!(ran.output.contains("Comet"), "the 60-INT spell shows too: {}", ran.output);

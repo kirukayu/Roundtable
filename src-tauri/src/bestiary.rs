@@ -412,12 +412,8 @@ mod tests {
         crate::testing::app_data().unwrap_or_default()
     }
 
-    /// Can the reward table be joined to a boss's NAME by position? The reward
-    /// (GameAreaParam) has a reward + a map + a position and no name; the map
-    /// files have the name + a position. If the nearest same-map dweller to each
-    /// reward is close and reads like a boss, "which boss gives the most runes"
-    /// can be answered honestly; if the distances are large or the names random,
-    /// it cannot and this stays refused.
+    /// Reward rows joined to the nearest same-map name, to test if boss rewards
+    /// can be named. Noisy: 75/186 unmatched, matches out to a kilometre.
     ///
     /// `cargo test --lib show_boss_rewards -- --ignored --nocapture`
     #[test]

@@ -1486,16 +1486,9 @@ pub struct Spell {
 /// rune figure with no name attached is an invitation to supply one, and
 /// supplying one is the mistake this was meant to stop.
 ///
-/// The map files are read now — `bestiary` does it, for both a loose total
-/// conversion and a plain game's packed archive. What does not hold up is
-/// joining a reward to a name by position. The probe `bestiary::show_boss_rewards`
-/// matches each reward to its nearest same-map dweller: 75 of 186 rows have no
-/// named dweller on their map at all, and the matches that exist run from 0
-/// units (certainly right — Gideon, Vyke) to over a thousand (certainly wrong —
-/// a jar-warrior reward landing on Alexander a kilometre away). Tight ones are
-/// real, but "the richest" cannot drop the loose ones without risking that the
-/// true richest was among them, so the reward stays unattached and the
-/// assistant still says it cannot rank bosses by runes.
+/// The map files are read (`bestiary`), but joining a reward to a name by
+/// position is too noisy to trust: 75 of 186 rows unmatched, some a kilometre
+/// off. Reward stays nameless, no boss-by-runes ranking. See `show_boss_rewards`.
 pub mod boss {
     pub const RUNES: usize = 0x04;
     /// `foundBossTextId`. Kept for completeness; see above for why it is not a
