@@ -661,9 +661,12 @@ fn tool_schemas() -> serde_json::Value {
                                 "Instead of a name: list what this much faith would open. Use it \
                                  for \"what would raising faith to 30 give me\" — the answer is \
                                  the spells between what they have now and this, out of their \
-                                 own tables, and never a list from memory. With no name and no \
-                                 attribute at all, it answers what they can cast as they stand \
-                                 and how many spells this game has altogether."
+                                 own tables, and never a list from memory. It also answers \
+                                 \"which need at least this much\": both lists come back, the \
+                                 ones that open (needing no more than this) and the ones that \
+                                 need this or MORE, so use the one the question asked. With no \
+                                 name and no attribute at all, it answers what they can cast as \
+                                 they stand and how many spells this game has altogether."
                         },
                         "intelligence": {
                             "type": "integer",
@@ -4795,7 +4798,46 @@ async fn run_tool(
                     .filter(|cast| !now.iter().any(|had| had.name == cast.name))
                     .collect();
 
-                if opened.is_empty() {
+                // The "at least X" answer, off every spell rather than the delta
+                // above. Asked which spells need AT LEAST 60 INT, a model called
+                // this with intelligence 60, got the opens-up list — spells
+                // needing NO MORE than 60, the opposite — and reported nothing
+                // needs more. So answer the threshold outright, per attribute the
+                // caller named, off the raw value given not the one maxed with
+                // their current stat.
+                let req = |cast: &Cast, key: &str| -> u8 {
+                    cast.spell
+                        .needs
+                        .iter()
+                        .find(|(what, _)| what.to_lowercase().starts_with(key))
+                        .map(|(_, value)| *value)
+                        .unwrap_or(0)
+                };
+                let every = (player.spells_at)(99, 99, 99);
+                let mut threshold = String::new();
+                for (key, label, given) in [
+                    ("intel", "INT", raised("intelligence")),
+                    ("faith", "FTH", raised("faith")),
+                    ("arcane", "ARC", raised("arcane")),
+                ] {
+                    let Some(floor) = given else { continue };
+                    let mut at_least: Vec<&Cast> =
+                        every.iter().filter(|cast| req(cast, key) >= floor).collect();
+                    at_least.sort_by(|a, b| req(b, key).cmp(&req(a, key)));
+                    if at_least.is_empty() {
+                        threshold.push_str(&format!(
+                            "No spell in this game needs {label} {floor} or more.\n"
+                        ));
+                    } else {
+                        threshold.push_str(&format!(
+                            "Needs {label} {floor} or MORE — {} in all, hardest first:\n",
+                            at_least.len()
+                        ));
+                        threshold.push_str(&listing(&at_least));
+                    }
+                }
+
+                if opened.is_empty() && threshold.is_empty() {
                     return Ran {
                         output: format!(
                             "Nothing in this game's tables opens up between what they have \
@@ -4808,14 +4850,31 @@ async fn run_tool(
                     };
                 }
 
-                let mut out = format!(
-                    "At INT {want_int}, FTH {want_fth}, ARC {want_arc} — up from INT {int}, FTH \
-                     {fth}, ARC {arc} — these open in their own game, and only these:\n"
+                let mut out = String::new();
+                if !threshold.is_empty() {
+                    out.push_str(&threshold);
+                    out.push('\n');
+                }
+                if !opened.is_empty() {
+                    out.push_str(&format!(
+                        "Reaching INT {want_int}, FTH {want_fth}, ARC {want_arc} — up from INT \
+                         {int}, FTH {fth}, ARC {arc} — opens these, and only these, which need NO \
+                         MORE than that:\n"
+                    ));
+                    out.push_str(&listing(&opened));
+                }
+                out.push_str(
+                    "\n\"Opens\" is the requirement being no more than the value asked; \"needs X \
+                     or MORE\" is the opposite list. Do not report one as the other, and never say \
+                     a game has no spell above a value unless the second list says none.\n",
                 );
-                out.push_str(&listing(&opened));
                 return Ran {
                     output: out,
-                    note: Some(format!("Opens up · {} spells", opened.len())),
+                    note: Some(if threshold.is_empty() {
+                        format!("Opens up · {} spells", opened.len())
+                    } else {
+                        "Spells by requirement".into()
+                    }),
                     source: Some("the installed game's own tables".into()),
                 };
             }
@@ -7670,7 +7729,6 @@ fn ungrounded_names(answer: &str, facts: &str, asked: &str) -> Vec<String> {
     // that the run is invented. Without this, "Надень Доспеха Овцебыка" was
     // flagged over the imperative verb while both halves of the armour's real
     // name sat right there in the tool output.
-    let mut opening = true;
     let mut found: Vec<String> = Vec::new();
     // A run of two or more capital-initial words, which is what an item name
     // looks like when a model writes one out. One capital on its own is a
@@ -7717,7 +7775,7 @@ fn ungrounded_names(answer: &str, facts: &str, asked: &str) -> Vec<String> {
     // word beside them. A check that holds back a correct answer is worse than
     // one that misses, so the boundary has to be real.
     for line in answer.lines() {
-        opening = true;
+        let mut opening = true;
         for raw in line.split_whitespace() {
         // Punctuation is not part of a name, and a full stop ENDS a run: the
         // last word of one sentence and the first of the next are not a name
@@ -8624,6 +8682,53 @@ mod tests {
         // A real ash name still lists that ash.
         let hit = run_tool(&http, Path::new("."), None, &player, &named("lion")).await;
         assert!(hit.output.contains("Lion's Claw"), "a named match still lists: {}", hit.output);
+    }
+
+    /// "Which spells need at least 60 INT" must not be answered with the
+    /// opens-up list, which is the opposite. Live, from battery 71: asked in
+    /// German for spells needing >=60 INT, the model got "opens up at 60"
+    /// (needs <=60), named the one spell at exactly 60, and said all others are
+    /// below — hiding every spell that needs 61+.
+    #[tokio::test]
+    async fn at_least_a_stat_is_not_the_opens_up_list() {
+        let player = Player {
+            spells_at: Box::new(|int, _faith, _arcane| {
+                let mk = |name: &str, need: u8| Cast {
+                    name: name.into(),
+                    spell: crate::formats::regulation::Spell {
+                        id: 0,
+                        fp: 20,
+                        fp_held: None,
+                        stamina: 0,
+                        slots: 1,
+                        needs: vec![("intelligence (INT)".into(), need)],
+                    },
+                    modded: false,
+                };
+                [("Pebble", 40u8), ("Comet", 60), ("Dark Moon", 70)]
+                    .into_iter()
+                    .map(|(name, need)| mk(name, need))
+                    .filter(|cast| cast.spell.needs.iter().all(|(_, value)| *value <= int))
+                    .collect()
+            }),
+            ..Player::default()
+        };
+        let call = ToolCall {
+            id: "1".into(),
+            function: ToolFunction {
+                name: "spell_numbers".into(),
+                arguments: "{\"intelligence\":60}".into(),
+            },
+        };
+        let http = reqwest::Client::new();
+        let ran = run_tool(&http, Path::new("."), None, &player, &call).await;
+
+        // The threshold list must exist and must carry the spell that needs 70 —
+        // the one the opens-up list can never show and the model denied existed.
+        assert!(ran.output.contains("or MORE"), "must give the at-least list: {}", ran.output);
+        assert!(ran.output.contains("Dark Moon"), "a 70-INT spell must show for >=60: {}", ran.output);
+        // And the two directions are labelled so they cannot be swapped.
+        assert!(ran.output.contains("opens"), "keeps the opens-up list too: {}", ran.output);
     }
 
     /// A determiner is grammar, not the first word of an invented name.
